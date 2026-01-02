@@ -1,31 +1,59 @@
 @import "tailwindcss";
+@import 'primeicons/primeicons.css';
 
-:root {
-  /* Superficies */
-  --p-surface-0: #F9FAFB;
-  --p-surface-50: #F3F4F6;
-  --p-surface-100: #EEF2F4;
-  --p-surface-200: #E5E7EB;
+/* 1. CONFIGURACIÓN DE TAILWIND (El reemplazo de tailwind.config.js) */
+@theme {
+  /* -- Mapeo de Colores PRIMARIOS -- */
+  /* Al poner --color-primary, creas automáticamente: text-primary, bg-primary, border-primary */
+  --color-primary: var(--p-primary-color);
+  --color-primary-contrast: var(--p-primary-contrast-color);
+  --color-primary-hover: var(--p-primary-hover-color);
+  --color-primary-active: var(--p-primary-active-color);
 
-  /* Texto */
-  --p-text-color: #1F2933;
-  --p-text-muted-color: #6B7280;
+  /* -- Mapeo de SUPERFICIES (Grises) -- */
+  /* Al poner --color-surface-50, creas: bg-surface-50, text-surface-50, etc. */
+  --color-surface-0: var(--p-surface-0);
+  --color-surface-50: var(--p-surface-50);
+  --color-surface-100: var(--p-surface-100);
+  --color-surface-200: var(--p-surface-200);
+  --color-surface-500: var(--p-text-muted-color); /* Mapeo manual para que no falle tu HTML */
+  --color-surface-900: var(--p-text-color);       /* Mapeo manual para texto oscuro */
 
-  /* Primarios (Hilton style) */
-  --p-primary-color: #0E7490;
-  --p-primary-contrast-color: #FFFFFF;
-  --p-primary-hover-color: #155E75;
-  --p-primary-active-color: #164E63;
+  /* -- Mapeo de HIGHLIGHTS -- */
+  --color-highlight-bg: var(--p-highlight-bg);
+  --color-highlight-text: var(--p-highlight-text-color);
+}
 
-  /* Bordes */
-  --p-border-color: #E5E7EB;
+/* 2. TUS VARIABLES ORIGINALES (Valores Hexadecimales) */
+@layer base {
+  :root {
+    /* Superficies */
+    --p-surface-0: #F9FAFB;
+    --p-surface-50: #F3F4F6;
+    --p-surface-100: #EEF2F4;
+    --p-surface-200: #E5E7EB;
 
-  /* Inputs */
-  --p-input-bg: #FFFFFF;
-  --p-input-text-color: #1F2933;
-  --p-input-border-color: #D1D5DB;
+    /* Texto */
+    --p-text-color: #1F2933;
+    --p-text-muted-color: #6B7280;
+    --p-text-inverse-color: #FFFFFF;
 
-  /* Highlight */
-  --p-highlight-bg: #E0F2FE;
-  --p-highlight-text-color: #075985;
+    /* Primarios (Hilton style) */
+    --p-primary-color: #0c4585;
+    --p-primary-contrast-color: #FFFFFF;
+    --p-primary-hover-color: #152b75;
+    --p-primary-active-color: #162463;
+
+    /* Bordes */
+    --p-border-color: #E5E7EB;
+
+    /* Inputs */
+    --p-input-bg: #FFFFFF;
+    --p-input-text-color: #1F2933;
+    --p-input-border-color: #D1D5DB;
+
+    /* Highlight */
+    --p-highlight-bg: #E0F2FE;
+    --p-highlight-text-color: #075985;
+  }
 }

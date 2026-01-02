@@ -16,7 +16,6 @@ export const useAuthStore = defineStore('auth', () => {
     // Getters
     const isAuthenticated = computed(() => !!token.value);
     
-    // Getter blindado para roles (Case Insensitive)
     const isAdmin = computed(() => {
         const currentRole = user.value?.role;
         if (!currentRole) return false;
@@ -25,18 +24,16 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Actions
 
-    // 1. LOGIN
+    // 1. LOGIN (CORREGIDO)
     async function login(payload: LoginPayload) {
         isLoading.value = true;
         error.value = null;
 
         try {
-            // Limpieza preventiva
             localStorage.removeItem('access_token');
             token.value = null;
             user.value = null;
 
-            // Petición al API
             const responseData = await authService.login(payload);
 
             if (!responseData.access_token) {
@@ -47,19 +44,24 @@ export const useAuthStore = defineStore('auth', () => {
             token.value = responseData.access_token;
             localStorage.setItem('access_token', responseData.access_token);
 
-            // Si el login ya devuelve el usuario, lo guardamos aquí.
+            
             if (responseData.user) {
                 user.value = responseData.user;
-                console.log("✅ Usuario cargado desde Login:", user.value);
+                console.log("✅ Usuario cargado desde Login Response");
+            } 
+            else {
+                console.log("🔄 Token recibido, obteniendo perfil de usuario...");
+                const userData = await authService.getMe();
+                user.value = userData;
+                console.log("✅ Usuario cargado desde getMe()");
             }
 
             // Redirección
-            // El Guard se encargará de verificar si falta algo más.
             await router.push({ name: 'Dashboard' });
 
         } catch (err: any) {
-            // Limpiamos si falló
             localStorage.removeItem('access_token'); 
+            token.value = null; 
             
             if (err.response?.status === 401) {
                 error.value = 'Credenciales incorrectas.';
@@ -79,24 +81,21 @@ export const useAuthStore = defineStore('auth', () => {
         router.push({ name: 'Login' });
     }
 
-    // 3. CHECK AUTH (Vital para el Guard)
+    // 3. CHECK AUTH
     async function checkAuth(): Promise<boolean> {
-        // Validación física del token
         const storedToken = localStorage.getItem('access_token');
         if (!token.value && !storedToken) return false;
 
-        // Si ya tenemos usuario en memoria, no gastamos ancho de banda
         if (user.value) return true;
 
         try {
-            // Sincronizamos token en memoria si se perdió por F5
             if (!token.value) token.value = storedToken;
 
             const userData = await authService.getMe();
             user.value = userData;
             return true;
         } catch (e) {
-            logout(); // Auto-limpieza
+            logout();
             return false;
         }
     }

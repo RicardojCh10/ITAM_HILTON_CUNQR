@@ -51,6 +51,21 @@ class HttpClient {
   public post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     return this.api.post<T>(url, data, config);
   }
+
+  // AGREGADO: Método PUT para actualizaciones completas
+  public put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.put<T>(url, data, config);
+  }
+
+  // AGREGADO: Método PATCH para actualizaciones parciales (Opcional, pero recomendado tenerlo)
+  public patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.patch<T>(url, data, config);
+  }
+
+  // AGREGADO: Método DELETE para eliminaciones
+  public delete<T>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.delete<T>(url, config);
+  }
 }
 
 export const httpClient = new HttpClient();
