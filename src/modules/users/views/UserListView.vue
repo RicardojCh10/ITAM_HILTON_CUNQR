@@ -31,7 +31,11 @@ const isEditMode = ref(false);
 const submitted = ref(false);
 const selectedUsers = ref<User[]>([]);
 const selectedUserToDelete = ref<User | null>(null);
-const properties = ref<Property[]>([]); // Lista para el Dropdown
+const properties = ref<Property[]>([]); 
+const searchValue = ref('');
+
+// Determina si es borrado masivo o individual
+const isBulkDelete = ref(false);
 
 // Filtros Locales
 const filters = ref({
@@ -53,22 +57,19 @@ const userForm = ref({
   propertyId: null as number | null
 });
 
-// Configuración de Paginación Local (Estado Inicial)
+// Configuración de Paginación Local
 const lazyParams = ref({
-    first: 0,    // Primer índice visual
-    rows: 15,    // Filas por página
-    page: 0      // Página actual (Base 0)
+    first: 0,
+    rows: 15,
+    page: 0
 });
 
 // --- CICLO DE VIDA ---
 onMounted(async () => {
-    // 1. Cargar Datos de la Tabla
     loadLazyData();
-    // 2. Cargar Lista de Propiedades para el Select
     await loadProperties();
 });
 
-// Cargar Propiedades (Dropdown)
 const loadProperties = async () => {
     try {
         properties.value = await listProperties();
@@ -77,15 +78,27 @@ const loadProperties = async () => {
     }
 }
 
-// --- LÓGICA DE PAGINACIÓN (CORE) ---
+// --- LÓGICA DE PAGINACIÓN Y BÚSQUEDA ---
 const loadLazyData = () => {
     const laravelPage = lazyParams.value.page + 1;
-    userStore.fetchUsers(laravelPage, lazyParams.value.rows);
+    // Enviamos página, filas Y búsqueda
+    userStore.fetchUsers(laravelPage, lazyParams.value.rows, searchValue.value);
 };
 
 const onPage = (event: DataTablePageEvent) => {
     lazyParams.value = event; 
     loadLazyData();          
+};
+
+// --- DEBOUNCE SEARCH ---
+let searchTimeout: ReturnType<typeof setTimeout>;
+const onSearch = () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        lazyParams.value.first = 0;
+        lazyParams.value.page = 0;
+        loadLazyData();
+    }, 500);
 };
 
 // --- VALIDACIONES ---
@@ -121,7 +134,6 @@ function editUser(user: User) {
     name: user.name, 
     email: user.email, 
     roleId: user.role, 
-    // Mapeo Inteligente: Si el objeto property existe, tomamos su ID, si no, null
     propertyId: user.property?.id || null, 
     password: '' 
   };
@@ -132,74 +144,66 @@ function editUser(user: User) {
 
 async function saveUser() {
   submitted.value = true;
-  
-  // 1. Validaciones de campos obligatorios
-  if (!userForm.value.name?.trim() || !userForm.value.email?.trim() || !userForm.value.roleId) {
-    return;
-  }
+  if (!userForm.value.name?.trim() || !userForm.value.email?.trim() || !userForm.value.roleId) return;
+  if (!isEditMode.value && (!userForm.value.password || !validPassword(userForm.value.password))) return;
 
-  // 2. Validación de Contraseña (Solo para Crear o si se intenta cambiar)
-  if (!isEditMode.value) {
-    // Si estamos creando, la contraseña es obligatoria y debe ser válida
-    if (!userForm.value.password || !validPassword(userForm.value.password)) {
-        return;
-    }
-  } else {
-    // Si estamos editando y escribieron algo, debe ser válido
-    if (userForm.value.password && !validPassword(userForm.value.password)) {
-        return;
-    }
-  }
+  const payload = {
+      name: userForm.value.name,
+      email: userForm.value.email,
+      role: userForm.value.roleId,
+      password: userForm.value.password || undefined,
+      property_id: userForm.value.propertyId 
+  };
 
   try {
     if (isEditMode.value && userForm.value.id) {
-      // --- MODO EDICIÓN ---
-      // Aquí password puede ser undefined, así que TS no se queja
-      await userStore.updateUser(userForm.value.id, {
-        name: userForm.value.name,
-        email: userForm.value.email,
-        role: userForm.value.roleId,
-        password: userForm.value.password || undefined, // Envía undefined si está vacío
-        property_id: userForm.value.propertyId
-      });
+      await userStore.updateUser(userForm.value.id, payload);
       toast.add({ severity: 'success', summary: 'Éxito', detail: 'Usuario actualizado', life: 3000 });
-      
     } else {
-      // --- MODO CREACIÓN (SOLUCIÓN ERROR 2) ---
-      // TypeScript sabe que si pasamos la validación de arriba, password NO es vacío.
-      // Pero para estar 100% seguros, forzamos el tipo 'as string' o aseguramos que no sea undefined.
-      
       await userStore.createUser({
-        name: userForm.value.name,
-        email: userForm.value.email,
-        role: userForm.value.roleId,
-        password: userForm.value.password as string, // <--- GARANTIZAMOS QUE ES STRING
-        property_id: userForm.value.propertyId
+          ...payload,
+          password: userForm.value.password as string 
       });
       toast.add({ severity: 'success', summary: 'Éxito', detail: 'Usuario creado', life: 3000 });
     }
     
     userDialog.value = false;
-    loadLazyData(); // Recargamos la tabla
+    loadLazyData(); 
   } catch (e) {
-    // El error lo maneja el store o interceptor
     console.error(e);
   }
 }
 
+// --- LÓGICA BORRADO MASIVO vs INDIVIDUAL ---
+function confirmDeleteSelected() {
+    isBulkDelete.value = true;
+    deleteUserDialog.value = true;
+}
+
 function confirmDeleteUser(user: User) {
-  selectedUserToDelete.value = user;
-  deleteUserDialog.value = true;
+    isBulkDelete.value = false;
+    selectedUserToDelete.value = user;
+    deleteUserDialog.value = true;
 }
 
 async function deleteUser() {
-  if (selectedUserToDelete.value) {
-    await userStore.deleteUser(selectedUserToDelete.value.id);
-    deleteUserDialog.value = false;
-    selectedUserToDelete.value = null;
-    toast.add({ severity: 'success', summary: 'Eliminado', detail: 'Usuario eliminado', life: 3000 });
-    loadLazyData(); 
+  deleteUserDialog.value = false;
+
+  if (isBulkDelete.value) {
+      // Borrado Masivo
+      for (const user of selectedUsers.value) {
+          await userStore.deleteUser(user.id);
+      }
+      selectedUsers.value = [];
+      toast.add({ severity: 'success', summary: 'Éxito', detail: 'Usuarios eliminados', life: 3000 });
+  } else if (selectedUserToDelete.value) {
+      // Borrado Individual
+      await userStore.deleteUser(selectedUserToDelete.value.id);
+      selectedUserToDelete.value = null;
+      toast.add({ severity: 'success', summary: 'Éxito', detail: 'Usuario eliminado', life: 3000 });
   }
+  
+  loadLazyData(); 
 }
 </script>
 
@@ -211,11 +215,12 @@ async function deleteUser() {
         <Button label="Nuevo" icon="pi pi-plus"
                 class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded mr-3"
                 @click="openNew" />
-        <Button label="Eliminar" icon="pi pi-trash"
+        
+        <Button label="Eliminar Seleccionados" icon="pi pi-trash"
                 severity="danger"
                 class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-                :disabled="!selectedUsers.length" 
-                @click="selectedUsers[0] && confirmDeleteUser(selectedUsers[0])"
+                :disabled="!selectedUsers || !selectedUsers.length" 
+                @click="confirmDeleteSelected"
                 /> 
       </template>
     </Toolbar>
@@ -228,6 +233,7 @@ async function deleteUser() {
      :totalRecords="userStore.totalRecords"
      :loading="userStore.isLoading"
      @page="onPage"
+     v-model:selection="selectedUsers"
      :rowsPerPageOptions="[5, 10, 15, 25, 50]"
      paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
      currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} usuarios"
@@ -241,21 +247,32 @@ async function deleteUser() {
             <InputIcon>
               <i class="pi pi-search text-gray-500" />
             </InputIcon>
-            <InputText v-model="filters.global.value" placeholder="Buscar usuarios" class="border border-gray-300 rounded-md p-2" />
+            <InputText 
+                v-model="searchValue" 
+                @input="onSearch"
+                placeholder="Buscar (Nombre o Email)" 
+                class="border border-gray-300 rounded-md p-2 w-64" 
+            />
           </IconField>
         </div>
       </template>
 
       <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-      <Column field="id" header="ID" sortable class="py-2 px-4" />
-      <Column field="name" header="Nombre" sortable class="py-2 px-4" />
-      <Column field="email" header="Email" sortable class="py-2 px-4" />
+
+      <Column header="#">
+        <template #body="slotProps">
+            {{ lazyParams.page * lazyParams.rows + slotProps.index + 1 }}
+        </template>
+      </Column>
+
+      <Column class="text-sm" field="name" header="Nombre" />
+      <Column class="text-sm" field="email" header="Email" />
       
-      <Column header="Propiedad" class="py-2 px-4">
+      <Column header="Propiedad">
         <template #body="slotProps">
             <div v-if="slotProps.data.property" class="flex items-center gap-2">
                 <i class="pi pi-building text-gray-400"></i>
-                <span class="font-medium">{{ slotProps.data.property.name }}</span>
+                <span class="font-medium text-sm">{{ slotProps.data.property.name }}</span>
             </div>
             <div v-else class="text-gray-400 italic text-sm">
                 Global / Sin Asignar
@@ -263,22 +280,24 @@ async function deleteUser() {
         </template>
       </Column>
 
-      <Column field="role" header="Rol" sortable class="py-2 px-4">
+      <Column field="role" header="Rol">
          <template #body="slotProps">
             <span class="capitalize px-2 py-1 rounded bg-gray-100 text-sm">{{ slotProps.data.role }}</span>
          </template>
       </Column>
       
-      <Column header="Acciones" class="py-2 px-4">
+      <Column header="Acciones">
         <template #body="slotProps">
           <div class="flex space-x-2">
-            <Button icon="pi pi-pencil"
-                    class="p-button-rounded p-button-outlined bg-green-500 hover:bg-green-600 text-white"
+            <Button 
+                    icon="pi pi-pencil"
+                    severity="info"
+                    class="p-button-rounded p-button-outlined text-white"
                     @click="editUser(slotProps.data)" />
             <Button v-if="slotProps.data.id !== authStore.user?.id"
                     icon="pi pi-trash"
                     severity="danger"
-                    class="p-button-rounded p-button-outlined bg-red-500 hover:bg-red-600 text-white"
+                    class="p-button-rounded p-button-outlined text-white"
                     @click="confirmDeleteUser(slotProps.data)" />
           </div>
         </template>
@@ -337,15 +356,22 @@ async function deleteUser() {
       </template>
     </Dialog>
 
-    <Dialog header="Confirmar" v-model:visible="deleteUserDialog" modal class="w-120">
+    <Dialog header="Confirmar Eliminación" v-model:visible="deleteUserDialog" modal class="w-120">
       <div class="flex items-center space-x-3">
-        <i class="pi pi-exclamation-triangle !text-3xl text-orange-400"></i>
-        <span class="text-gray-700">¿Seguro que deseas eliminar a <b>{{ selectedUserToDelete?.name }}</b>?</span>
+        <i class="pi pi-exclamation-triangle text-3xl text-orange-400"></i>
+        <span class="text-gray-700">
+            <span v-if="isBulkDelete">
+                ¿Estás seguro de eliminar a los <b>{{ selectedUsers.length }}</b> usuarios seleccionados?
+            </span>
+            <span v-else>
+                ¿Estás seguro de eliminar a <b>{{ selectedUserToDelete?.name }}</b>?
+            </span>
+        </span>
       </div>
       <template #footer>
         <div class="flex justify-end space-x-2 mt-4">
           <Button label="Cancelar" icon="pi pi-times" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded" text @click="deleteUserDialog = false" />
-          <Button label="Eliminar" severity="danger" icon="pi pi-check" text @click="deleteUser" :loading="userStore.isLoading"/>
+          <Button label="Sí, eliminar" severity="danger" icon="pi pi-check" text @click="deleteUser" :loading="userStore.isLoading"/>
         </div>
       </template>
     </Dialog>

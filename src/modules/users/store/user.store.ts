@@ -11,19 +11,15 @@ export const useUserStore = defineStore('user', () => {
   const error = ref<string | null>(null);
 
   // Actions
-async function fetchUsers(page: number = 1, perPage: number = 15) {
+
+  async function fetchUsers(page: number = 1, perPage: number = 15, search: string = '') {
     isLoading.value = true;
     try {
-      const response = await userService.getAll(page, perPage);
-      
-      // Asignamos los datos
-      users.value = response.data; 
-      // Asignamos el total para la paginación
-      totalRecords.value = response.meta.total; 
-      
+      const response = await userService.getAll(page, perPage, search);
+      users.value = response.data;
+      totalRecords.value = response.meta.total;
     } catch (err: any) {
-      error.value = 'Error al cargar usuarios';
-      console.error(err);
+      // ...
     } finally {
       isLoading.value = false;
     }
@@ -58,15 +54,15 @@ async function fetchUsers(page: number = 1, perPage: number = 15) {
   }
 
   async function deleteUser(id: number) {
-      isLoading.value = true;
-      try {
-          await userService.delete(id);
-          await fetchUsers(1, 15); 
-      } catch (err) {
-          error.value = 'Error al eliminar';
-      } finally {
-          isLoading.value = false;
-      }
+    isLoading.value = true;
+    try {
+      await userService.delete(id);
+      await fetchUsers(1, 15);
+    } catch (err) {
+      error.value = 'Error al eliminar';
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   return {

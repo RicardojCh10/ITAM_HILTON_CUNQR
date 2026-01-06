@@ -12,9 +12,9 @@ export const routes: RouteRecordRaw[] = [
     path: '/auth/login',
     name: 'Login',
     component: () => import('@/modules/auth/views/LoginView.vue'),
-    meta: { 
+    meta: {
       requiresAuth: false,
-      guestOnly: true 
+      guestOnly: true
     }
   },
 
@@ -23,29 +23,72 @@ export const routes: RouteRecordRaw[] = [
     path: '/dashboard',
     // IMPORTANTE: Este componente ahora solo debe contener el Header y un <RouterView />
     component: () => import('@/modules/dashboard/views/DashboardLayout.vue'),
-    meta: { 
-      requiresAuth: true 
+    meta: {
+      requiresAuth: true
     },
     children: [
       {
         // Ruta: /dashboard
-        path: '', 
+        path: '',
         name: 'Dashboard',
-        component: () => import('@/modules/dashboard/views/WidgetsView.vue'), 
-        meta: { 
-          title: 'Panel Principal' 
+        component: () => import('@/modules/dashboard/views/WidgetsView.vue'),
+        meta: {
+          title: 'Panel Principal'
         }
       },
       {
         // Ruta: /dashboard/users
-        path: 'users', 
+        path: 'users',
         name: 'UserList',
         component: () => import('@/modules/users/views/UserListView.vue'),
-        meta: { 
+        meta: {
           title: 'Gestión de Usuarios',
           roles: ['admin'] // Preparado para control de roles futuro
         }
-      }
+      },
+      {
+        // Ruta: /dashboard/properties
+        path: 'properties',
+        name: 'PropertyList',
+        component: () => import('@/modules/properties/views/PropertyListView.vue'),
+        meta: {
+          title: 'Gestión de Propiedades',
+          roles: ['admin']
+        }
+      },
+      {
+        // Ruta: /dashboard/members
+        path: 'members',
+        name: 'MemberList',
+        component: () => import('@/modules/members/views/MemberListView.vue'),
+        meta: {
+          title: 'Gestión de Miembros',
+          roles: ['admin']
+        }
+      },
+      {
+        path: 'members/:id', 
+        name: 'MemberDetail',
+        component: () => import('@/modules/members/views/MemberDetailView.vue'),
+        meta: { title: 'Detalles del Miembro' }
+      },
+      // Ruta: /dashboard/assets
+      {
+        path: 'assets',
+        name: 'AssetList',
+        component: () => import('@/modules/assets/views/AssetListView.vue'),
+        meta: {
+          title: 'Gestión de Activos',
+          roles: ['admin']
+        }
+      },
+      // {
+      //   path: 'assets/:id',
+      //   name: 'AssetDetail',
+      //   component: () => import('@/modules/assets/views/AssetDetailView.vue'),
+      //   meta: { title: 'Detalles del Activo' }
+      // },
+
     ]
   },
 
