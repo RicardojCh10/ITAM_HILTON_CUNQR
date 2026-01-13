@@ -12,10 +12,10 @@ export const useUserStore = defineStore('user', () => {
 
   // Actions
 
-  async function fetchUsers(page: number = 1, perPage: number = 15, search: string = '') {
+  async function fetchUsers(page: number = 1, perPage: number = 15, search: string = '', propertyId: number | null = null) {
     isLoading.value = true;
     try {
-      const response = await userService.getAll(page, perPage, search);
+      const response = await userService.getAll(page, perPage, search, propertyId);
       users.value = response.data;
       totalRecords.value = response.meta.total;
     } catch (err: any) {

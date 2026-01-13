@@ -2,6 +2,15 @@ export interface AssetSpecs {
     ram?: string | null;
     storage?: string | null;
     processor?: string | null;
+    provider?: string | null;
+
+    imei?: string | null;          
+    sim?: string | null;          
+    plan?: string | null;          
+    carrier?: string | null;       
+    phone_number?: string | null;  
+    
+    description?: string | null;
 }
 
 export interface Asset {

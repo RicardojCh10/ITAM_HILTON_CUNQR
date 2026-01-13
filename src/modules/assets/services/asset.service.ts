@@ -33,6 +33,26 @@ class AssetService {
     return response.data.data || response.data;
   }
 
+  async downloadAssignmentPdf(id: number): Promise<void> {
+    const response = await httpClient.get(`/assets/${id}/download-assignment`, {
+        responseType: 'blob' // Esto es vital para que Axios no intente leerlo como JSON
+    });
+    
+    const blob = new Blob([response.data as any], { type: 'application/pdf' });
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    link.setAttribute('download', `Acta_Asignacion_${id}.pdf`); 
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+}
+
   async create(payload: CreateAssetPayload): Promise<Asset> {
     const response = await httpClient.post<{ data: Asset }>(this.BASE_URL, payload);
     return response.data.data || response.data;

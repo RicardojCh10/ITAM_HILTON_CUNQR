@@ -1,10 +1,11 @@
 export interface User {
   id: number;
   name: string;
+  last_name?: string;
+  full_name: string; // Computed del backend
   email: string;
   role: string;
   
-  // SOLUCIÓN ERROR 1: Definimos el objeto anidado
   property?: {
     id: number;
     name: string;
@@ -14,25 +15,24 @@ export interface User {
   created_at?: string;
 }
 
-// Payload para CREAR (Password es obligatorio)
 export interface CreateUserPayload {
   name: string;
+  last_name?: string;
   email: string;
   role: string;
-  password: string; // <--- Aquí dice string, no puede ser undefined
+  password: string; 
   property_id?: number | null;
 }
 
-// Payload para ACTUALIZAR (Password es opcional)
 export interface UpdateUserPayload {
   name?: string;
+  last_name?: string;
   email?: string;
   role?: string;
-  password?: string; // <--- Aquí sí puede ser opcional
+  password?: string; 
   property_id?: number | null;
 }
 
-// Tipado de la respuesta paginada completa (ya lo tenías, lo dejo por referencia)
 export interface UserListResponse {
   data: User[];
   links: any;

@@ -4,12 +4,16 @@ import type { UserListResponse, User, CreateUserPayload, UpdateUserPayload } fro
 class UserService {
   private readonly BASE_URL = '/users';
 
-  async getAll(page: number = 1, perPage: number = 15, search: string = ''): Promise<UserListResponse> {
+  async getAll(page: number = 1, perPage: number = 15, search: string = '', propertyId: number | null = null): Promise<UserListResponse> {
     
     // Construimos la URL dinámicamente
     const params = new URLSearchParams();
     params.append('page', page.toString());
     params.append('per_page', perPage.toString());
+
+    if (propertyId !== null) {
+        params.append('property_id', propertyId.toString());
+    }
     
     if (search) {
         params.append('search', search);

@@ -82,12 +82,12 @@ export const routes: RouteRecordRaw[] = [
           roles: ['admin']
         }
       },
-      // {
-      //   path: 'assets/:id',
-      //   name: 'AssetDetail',
-      //   component: () => import('@/modules/assets/views/AssetDetailView.vue'),
-      //   meta: { title: 'Detalles del Activo' }
-      // },
+      {
+        path: 'assets/:id',
+        name: 'AssetDetail',
+        component: () => import('@/modules/assets/views/AssetDetailView.vue'),
+        meta: { title: 'Detalles del Activo' }
+      },
 
     ]
   },

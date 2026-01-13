@@ -7,7 +7,8 @@ import App from './App.vue'
 import router from './router'
 import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
-import { ToastService } from 'primevue'
+import { ConfirmationService, ToastService } from 'primevue'
+import '@fortawesome/fontawesome-free/css/all.css';
 
 // PrimeVue components
 import Menu from 'primevue/menu';
@@ -25,7 +26,6 @@ import MultiSelect from 'primevue/multiselect';
 import Chart from 'primevue/chart';
 
 
-// Importaciones de componentes PrimeVue para el Mapa
 import Tag from 'primevue/tag';
 import ProgressSpinner from 'primevue/progressspinner';
 import Card from 'primevue/card';
@@ -52,6 +52,7 @@ app.use(PrimeVue, {
 
 app.use(ToastService);
 app.use(router)
+app.use(ConfirmationService)
 
 import { useAuthStore } from './modules/auth/store/auth.store';
 const authStore = useAuthStore();

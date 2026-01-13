@@ -105,7 +105,7 @@ const handleLogin = async () => {
         </div>
 
         <div class="relative w-full max-w-md px-6 py-8">
-            <div class="text-center mb-8">
+            <!-- <div class="text-center mb-8">
                 <div
                     class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white bg-gradient-to-br shadow-lg mb-4">
                     <img src="https://www.pngall.com/wp-content/uploads/15/Hilton-Logo-Background-PNG.png"
@@ -113,16 +113,21 @@ const handleLogin = async () => {
                 </div>
                 <h1 class="text-3xl font-bold text-slate-800 dark:text-white mb-2">ITAM</h1>
                 <p class="text-slate-600 dark:text-slate-300">Hilton Cancún an All Inclusive Resort</p>
-            </div>
+            </div> -->
 
             <div
                 class="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+
                 <div class="h-2 bg-gradient-to-r from-blue-600 via-blue-500 to-blue-600"></div>
                 <div class="p-8 sm:p-10">
                     <div class="text-center mb-8">
-                        <h2 class="text-2xl font-semibold text-slate-800 dark:text-white mb-2">Panel Administrativo</h2>
-                        <p class="text-slate-500 dark:text-slate-400 text-sm">Ingresa tus credenciales para continuar
-                        </p>
+                        <div
+                            class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white bg-gradient-to-br shadow-lg mb-4">
+                            <img src="https://www.pngall.com/wp-content/uploads/15/Hilton-Logo-Background-PNG.png"
+                                alt="Hilton Logo" class="w-15 h-15 object-contain" />
+                        </div>
+                        <h1 class="text-3xl font-bold text-slate-800 dark:text-white mb-2">ITAM</h1>
+                        <p class="text-slate-600 dark:text-slate-300">Hilton Cancún an All Inclusive Resort</p>
                     </div>
 
                     <form @submit.prevent="handleLogin" class="space-y-6">

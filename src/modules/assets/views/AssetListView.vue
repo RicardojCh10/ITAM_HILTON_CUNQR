@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useAssetStore } from '../store/asset.store';
@@ -8,7 +9,7 @@ import type { Asset, CreateAssetPayload } from '../types/asset.types';
 
 // Servicios auxiliares para dropdowns
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
-import { memberService } from '@/modules/members/services/member.service'; // Para llenar el select de miembros
+import { memberService } from '@/modules/members/services/member.service';
 
 // Exportación
 import * as XLSX from 'xlsx';
@@ -23,6 +24,7 @@ import Dialog from 'primevue/dialog';
 import Select from 'primevue/select';
 import Toolbar from 'primevue/toolbar';
 import Calendar from 'primevue/calendar';
+import Textarea from 'primevue/textarea';
 import InputText from 'primevue/inputtext';
 import DataTable from 'primevue/datatable';
 import InputIcon from 'primevue/inputicon';
@@ -77,7 +79,14 @@ const form = ref({
     // Specs JSON
     ram: '',
     storage: '',
-    processor: ''
+    processor: '',
+    provider: '',
+    imei: '',
+    sim: '',
+    plan: '',
+    carrier: '',
+    phone_number: '',
+    description: ''
 });
 
 // Búsqueda de miembros (Server Side)
@@ -92,16 +101,16 @@ const searchMember = async (event: AutoCompleteCompleteEvent) => {
     }));
 };
 
-const onMemberSelect = () => {
-    filterMember.value = selectedMemberObject.value ? selectedMemberObject.value.id : null;
-    onFilterChange();
-};
 
-const onMemberClear = () => {
-    filterMember.value = null;
-    selectedMemberObject.value = null;
+watch(selectedMemberObject, (newValue) => {
+    if (newValue) {
+        filterMember.value = newValue.id;
+    } else {
+        filterMember.value = null;
+    }
+    // Disparamos la recarga de la tabla
     onFilterChange();
-};
+});
 
 // Paginación
 const lazyParams = ref({ first: 0, rows: 15, page: 0 });
@@ -165,8 +174,8 @@ const fetchAllForExport = async () => {
 
 const exportCSV = async () => {
     const data = await fetchAllForExport();
-    const exportData = data.map((a: Asset) => ({
-        'ID': a.id,
+    const exportData = data.map((a: Asset, index: number) => ({
+        '#': index + 1,
         'Propiedad': a.location.property_name,
         'Categoría': a.info.category,
         'Marca': a.info.brand || '-',
@@ -189,7 +198,7 @@ const exportPDF = async () => {
     const data = await fetchAllForExport();
     const doc = new jsPDF('l', 'mm', 'a4');
     const columns = [
-        { header: 'ID', dataKey: 'id' },
+        { header: '#', dataKey: 'row_num' },
         { header: 'Propiedad', dataKey: 'property' },
         { header: 'Categoría', dataKey: 'category' },
         { header: 'Marca', dataKey: 'brand' },
@@ -202,8 +211,8 @@ const exportPDF = async () => {
         { header: 'MAC', dataKey: 'mac' }
     ];
 
-    const rows = data.map((a: Asset) => ({
-        id: a.id,
+    const rows = data.map((a: Asset, index: number) => ({
+        row_num: index + 1,
         property: a.location.property_name,
         category: a.info.category,
         brand: a.info.brand || '',
@@ -232,7 +241,10 @@ const openNew = () => {
     form.value = {
         id: 0, property_id: null, member_id: null, category: '', brand: '', model: '',
         serial_number: '', hilton_name: '', mac_address: '', ip_address: '', status: 'active',
-        purchase_date: null, warranty_expiry: null, ram: '', storage: '', processor: ''
+        purchase_date: null, warranty_expiry: null,
+
+        ram: '', storage: '', processor: '', provider: '',
+        imei: '', sim: '', plan: '', carrier: '', phone_number: '', description: ''
     };
     submitted.value = false;
     isEditMode.value = false;
@@ -257,7 +269,14 @@ const editAsset = (asset: Asset) => {
         // Specs flattening
         ram: asset.specs?.ram || '',
         storage: asset.specs?.storage || '',
-        processor: asset.specs?.processor || ''
+        processor: asset.specs?.processor || '',
+        provider: asset.specs?.provider || '',
+        imei: asset.specs?.imei || '',
+        sim: asset.specs?.sim || '',
+        plan: asset.specs?.plan || '',
+        carrier: asset.specs?.carrier || '',
+        phone_number: asset.specs?.phone_number || '',
+        description: asset.specs?.description || ''
     };
     submitted.value = false;
     isEditMode.value = true;
@@ -298,7 +317,14 @@ const saveAsset = async () => {
         specs: {
             ram: form.value.ram,
             storage: form.value.storage,
-            processor: form.value.processor
+            processor: form.value.processor,
+            provider: form.value.provider,
+            imei: form.value.imei,
+            sim: form.value.sim,
+            plan: form.value.plan,
+            carrier: form.value.carrier,
+            phone_number: form.value.phone_number,
+            description: form.value.description
         }
     };
 
@@ -448,17 +474,7 @@ const getSeverity = (status: string) => {
                 </Select>
 
                 <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="name"
-                    placeholder="Buscar Asignado..." class="w-full" @complete="searchMember"
-                    @item-select="onMemberSelect" @clear="onMemberClear" showClear dropdown>
-                    <template #option="slotProps">
-                        <div class="flex flex-col">
-                            <span class="font-semibold text-sm text-gray-700">{{ slotProps.option.name }}</span>
-                            <div class="flex items-center gap-2 text-xs text-gray-500">
-                                <i class="pi pi-briefcase"></i>
-                                <span>{{ slotProps.option.department }}</span>
-                            </div>
-                        </div>
-                    </template>
+                    placeholder="Buscar Asignado..." class="w-full" @complete="searchMember" showClear dropdown>
                 </AutoComplete>
 
             </div>
@@ -466,7 +482,7 @@ const getSeverity = (status: string) => {
 
         <DataTable :value="assetStore.assets" :lazy="true" :paginator="true" :rows="lazyParams.rows"
             :totalRecords="assetStore.totalRecords" :loading="assetStore.isLoading" @page="onPage"
-            class="shadow-md rounded-lg overflow-hidden text-sm" :rowsPerPageOptions="[10, 20, 50]" dataKey="id"
+            class="shadow-md rounded-lg overflow-hidden text-sm" :rowsPerPageOptions="[5, 10, 15, 25, 50]" dataKey="id"
             currentPageReportTemplate="{first} - {last} de {totalRecords}" stripedRows removableSort>
 
             <Column header="#">
@@ -480,9 +496,14 @@ const getSeverity = (status: string) => {
             <Column header="Equipo" style="min-width: 200px">
                 <template #body="slotProps">
                     <div class="flex flex-col">
-                        <span class="font-bold text-gray-800">{{ slotProps.data.info.category }}</span>
-                        <span class="text-sm text-gray-500">Marca: {{ slotProps.data.info.brand }} </span>
-                        <span class="text-sm text-gray-500">Modelo: {{ slotProps.data.info.model }}</span>
+                        <span class="font-bold text-sm text-gray-800">
+                            {{ slotProps.data.info.category }}</span>
+                        <span class=" text-gray-500 text-xs">
+                            <b>Marca:</b> {{ slotProps.data.info.brand || 'Genérico' }}
+                        </span>
+                        <span class="text-xs text-gray-500">
+                            <b>Modelo: </b>{{ slotProps.data.info.model || 'Sin modelo' }}
+                        </span>
                     </div>
                 </template>
             </Column>
@@ -519,7 +540,9 @@ const getSeverity = (status: string) => {
 
             <Column header="Departamento">
                 <template #body="slotProps">
-                    <span class="text-sm">{{ slotProps.data.assigned_to.department }}</span>
+                    <span class="text-sm">
+                        {{ slotProps.data.assigned_to?.department || '-' }}
+                    </span>
                 </template>
             </Column>
 
@@ -549,7 +572,7 @@ const getSeverity = (status: string) => {
             class="w-full max-w-5xl">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-2">
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 font-bold text-blue-600">Información General
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 font-bold text-gray-600">Información General
                 </div>
 
                 <div><label class="text-sm block mb-1">Propiedad *</label><Select v-model="form.property_id"
@@ -569,7 +592,7 @@ const getSeverity = (status: string) => {
                     <InputText v-model="form.hilton_name" class="w-full" />
                 </div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-blue-600">Estado y
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Estado y
                     Asignación</div>
 
                 <div>
@@ -582,7 +605,7 @@ const getSeverity = (status: string) => {
                         :options="membersList" optionLabel="name" optionValue="id" class="w-full" showClear filter
                         placeholder="Dejar vacío si está en Stock" /></div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-blue-600">Red</div>
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Red</div>
 
                 <div><label class="text-sm block mb-1">MAC Address</label>
                     <InputText v-model="form.mac_address" class="w-full font-mono" placeholder="AA:BB:CC..." />
@@ -591,7 +614,7 @@ const getSeverity = (status: string) => {
                     <InputText v-model="form.ip_address" class="w-full font-mono" placeholder="192.168..." />
                 </div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-blue-600">Especificaciones y
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Especificaciones y
                     Fechas
                 </div>
 
@@ -599,19 +622,58 @@ const getSeverity = (status: string) => {
                     <div><label class="text-sm block mb-1">RAM</label>
                         <InputText v-model="form.ram" class="w-full" />
                     </div>
-                    <div><label class="text-sm block mb-1">Storage</label>
+                    <div><label class="text-sm block mb-1">Almacenamiento</label>
                         <InputText v-model="form.storage" class="w-full" />
                     </div>
-                    <div><label class="text-sm block mb-1">Processor</label>
+                    <div><label class="text-sm block mb-1">Procesador</label>
                         <InputText v-model="form.processor" class="w-full" />
+                    </div>
+
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 col-span-2">
+                    <div><label class="text-sm block mb-1">Proveedor</label>
+                        <InputText v-model="form.provider" class="w-full" />
+                    </div>
+                    <div><label class="text-sm block mb-1">Fecha Compra</label>
+                        <Calendar v-model="form.purchase_date" showIcon class="w-full" />
+                    </div>
+                    <div><label class="text-sm block mb-1">Fin Garantía</label>
+                        <Calendar v-model="form.warranty_expiry" showIcon class="w-full" />
                     </div>
                 </div>
 
-                <div><label class="text-sm block mb-1">Fecha Compra</label>
-                    <Calendar v-model="form.purchase_date" showIcon class="w-full" />
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">
+                    Móvil / Detalles Adicionales
                 </div>
-                <div><label class="text-sm block mb-1">Fin Garantía</label>
-                    <Calendar v-model="form.warranty_expiry" showIcon class="w-full" />
+
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 col-span-2">
+                    <div>
+                        <label class="text-sm block mb-1">IMEI</label>
+                        <InputText v-model="form.imei" class="w-full font-mono" placeholder="Solo Móviles" />
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">Número Tel.</label>
+                        <InputText v-model="form.phone_number" class="w-full" placeholder="+52..." />
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">SIM Card ID</label>
+                        <InputText v-model="form.sim" class="w-full" />
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">Carrier (Telcel/AT&T)</label>
+                        <InputText v-model="form.carrier" class="w-full" />
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">Plan</label>
+                        <InputText v-model="form.plan" class="w-full" placeholder="Plan Empresarial..." />
+                    </div>
+                </div>
+
+                <div class="col-span-1 md:col-span-2 mt-2">
+                    <label class="text-sm block mb-1">Descripción / Notas</label>
+                    <Textarea v-model="form.description" rows="3" class="w-full"
+                        placeholder="Detalles adicionales del activo..." />
                 </div>
             </div>
 
@@ -626,10 +688,11 @@ const getSeverity = (status: string) => {
         </Dialog>
 
         <Dialog v-model:visible="deleteDialog" header="Confirmar" modal class="w-96">
-            <p>¿Eliminar este activo permanentemente?</p>
+            <p>¿Eliminar este activo: <b>{{ selectedAssetToDelete?.info.hilton_name }}</b> permanentemente?</p>
             <template #footer>
-                <Button label="No" text @click="deleteDialog = false" />
-                <Button label="Sí, Eliminar" severity="danger" @click="deleteAsset" />
+                <Button label="No" icon="pi pi-times" text @click="deleteDialog = false" />
+                <Button label="Sí, Eliminar" severity="danger" icon="pi pi-check" @click="deleteAsset"
+                    :loading="assetStore.isLoading" />
             </template>
         </Dialog>
     </div>
