@@ -241,8 +241,6 @@ const getRoleSeverity = (role: string) => {
 <template>
   <div class="w-full max-w-none p-4">
 
-    <!-- <div class="max-w-7xl mx-auto p-4"> -->
-
     <Toolbar class="flex flex-col md:flex-row items-center justify-between mb-4 gap-4 shadow-sm border-gray-200">
       <template #start>
         <div class="flex gap-2">

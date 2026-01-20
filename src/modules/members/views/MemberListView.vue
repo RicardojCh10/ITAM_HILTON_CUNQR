@@ -180,7 +180,6 @@ const handleFileUpload = async (event: any) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // 1. Feedback inicial
     toast.add({ severity: 'info', summary: 'Procesando...', detail: 'Validando archivo...', life: 2000 });
 
     const formData = new FormData();
@@ -215,7 +214,6 @@ const handleFileUpload = async (event: any) => {
             // Caso: Error general (ej. archivo corrupto)
             toast.add({ severity: 'error', summary: 'Error', detail: e.response.data.message, life: 5000 });
         } else {
-            // Fallback
             toast.add({ severity: 'error', summary: 'Error', detail: 'Fallo al importar. Verifica el archivo.', life: 5000 });
         }
     } finally {
