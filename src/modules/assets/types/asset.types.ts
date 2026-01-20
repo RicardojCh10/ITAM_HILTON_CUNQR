@@ -13,18 +13,22 @@ export interface AssetSpecs {
     description?: string | null;
 }
 
+export interface AssetMemberLite {
+    member_id: number;
+    name: string;      
+    last_name: string; 
+    full_name: string; 
+    department?: string;
+    tm_id?: string;
+}
+
 export interface Asset {
     id: number;
     location: {
         property_id: number;
         property_name: string;
     };
-    assigned_to: {
-        member_id: number | null;
-        name: string | null;
-        email: string | null;
-        department: string | null;
-    } | null;
+    assigned_to?: AssetMemberLite | null;
     info: {
         category: string;
         brand: string | null;

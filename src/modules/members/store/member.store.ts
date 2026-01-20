@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { memberService } from '../services/member.service';
-import type { Member, CreateMemberPayload } from '../types/member.types';
+import { memberService} from '../services/member.service';
+import type { Member, CreateMemberPayload, StatsResponse } from '../types/member.types';
 
 export const useMemberStore = defineStore('member', () => {
     // Estado
@@ -10,6 +10,8 @@ export const useMemberStore = defineStore('member', () => {
     const isLoading = ref(false);
     const error = ref<string | null>(null);
     const currentMember = ref<Member | null>(null);
+
+    const stats = ref<StatsResponse | null>(null);
 
     // Acciones
     async function fetchMembers(page: number = 1, perPage: number = 15, search: string = '', propertyId?: number, department?: string,
@@ -66,16 +68,41 @@ export const useMemberStore = defineStore('member', () => {
         }
     }
 
+    async function importMembers(file: File) {
+        isLoading.value = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            await memberService.import(formData);
+        } catch (e) {
+            console.error(e);
+            throw e; 
+        } finally {
+            isLoading.value = false;
+        }
+    }
+
+    async function fetchStats() {
+        try {
+            stats.value = await memberService.getStats();
+        } catch (e) {
+            console.error("Error cargando estadísticas", e);
+        }
+    }
+
     return {
         members,
         totalRecords,
         isLoading,
         error,
         currentMember,
+        stats,
         fetchMembers,
         fetchMemberById,
         createMember,
         updateMember,
         deleteMember,
+        importMembers,
+        fetchStats
     };
 });

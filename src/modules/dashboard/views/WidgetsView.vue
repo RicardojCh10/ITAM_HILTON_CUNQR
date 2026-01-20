@@ -28,10 +28,6 @@ const isAdmin = computed(() => authStore.isAdmin);
         </p>
       </div>
       
-      <div v-if="isAdmin" class="flex gap-3">
-        <Button label="Nuevo Activo" icon="pi pi-plus" size="small" class="shadow-sm hover:shadow-md transition-shadow" />
-        <Button label="Generar Reporte" icon="pi pi-file-excel" severity="secondary" size="small" class="shadow-sm hover:shadow-md transition-shadow" />
-      </div>
     </div>
 
     <template v-if="isAdmin">
@@ -103,7 +99,7 @@ const isAdmin = computed(() => authStore.isAdmin);
           <IncidentsChart />
         </section>
 
-        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div class="lg:col-span-7 space-y-4">
             <div class="flex items-center justify-between">
               <h3 class="text-xl font-bold text-surface-900">Activos Críticos</h3>
@@ -119,7 +115,7 @@ const isAdmin = computed(() => authStore.isAdmin);
             </div>
             <RecentAssetsWidget />
           </div>
-        </section>
+        </section> -->
     </template>
 
     <div v-else class="bg-white border-l-4 border-l-red-500 p-8 rounded-xl shadow-md flex items-center gap-6">

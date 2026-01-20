@@ -10,13 +10,14 @@ import type { Asset, CreateAssetPayload } from '../types/asset.types';
 // Servicios auxiliares para dropdowns
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
 import { memberService } from '@/modules/members/services/member.service';
+import type { Member } from '@/modules/members/types/member.types';
 
 // Exportación
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// PrimeVue
+// Componentes PrimeVue
 import Tag from 'primevue/tag';
 import Column from 'primevue/column';
 import Button from 'primevue/button';
@@ -42,10 +43,11 @@ const assetDialog = ref(false);
 const deleteDialog = ref(false);
 const submitted = ref(false);
 const isEditMode = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
 
 // --- LISTAS PARA DROPDOWNS ---
 const properties = ref<Property[]>([]);
-const membersList = ref<any[]>([]);
+// const membersList = ref<any[]>([]);
 const categoryOptions = ref(['Laptop', 'Desktop', 'Monitor', 'Printer', 'Server', 'Tablet', 'Access Point', 'Switch', 'Phone', 'Other']);
 
 // --- ESTADO PARA ELIMINAR ---
@@ -64,15 +66,15 @@ const selectedMemberObject = ref<any>(null);
 const form = ref({
     id: 0,
     property_id: null as number | null,
-    member_id: null as number | null,
+    // member_id: null as number | null,
     category: '',
+    status: 'active',
     brand: '',
     model: '',
     serial_number: '',
     hilton_name: '',
     mac_address: '',
     ip_address: '',
-    status: 'active',
     // Fechas
     purchase_date: null as Date | null,
     warranty_expiry: null as Date | null,
@@ -90,26 +92,25 @@ const form = ref({
 });
 
 // Búsqueda de miembros (Server Side)
-const searchMember = async (event: AutoCompleteCompleteEvent) => {
-    const response = await memberService.getAll(1, 15, event.query);
 
-    filteredMembers.value = response.data.map(m => ({
-        id: m.id,
-        name: m.name,
-        department: m.corporate_info?.department || 'Sin Depto',
-        email: m.email
-    }));
+const searchMember = async (event: AutoCompleteCompleteEvent) => {
+    const query = event.query.trim();
+    if (!query) return;
+
+    try {
+        const response = await memberService.getAll(1, 20, query);
+        filteredMembers.value = response.data;
+    } catch (e) {
+        console.error("Error buscando miembro", e);
+    }
 };
 
 
 watch(selectedMemberObject, (newValue) => {
-    if (newValue) {
-        filterMember.value = newValue.id;
-    } else {
-        filterMember.value = null;
+    if (!assetDialog.value) {
+        filterMember.value = newValue ? newValue.id : null;
+        onFilterChange();
     }
-    // Disparamos la recarga de la tabla
-    onFilterChange();
 });
 
 // Paginación
@@ -118,8 +119,6 @@ const lazyParams = ref({ first: 0, rows: 15, page: 0 });
 // --- CICLO DE VIDA ---
 onMounted(async () => {
     properties.value = await listProperties();
-    const membersData = await memberService.getAll(1, 1000);
-    membersList.value = membersData.data.map(m => ({ id: m.id, name: m.name }));
 
     loadLazyData();
 });
@@ -143,6 +142,43 @@ const onPage = (event: DataTablePageEvent) => {
     loadLazyData();
 };
 
+// --- IMPORTACIÓN DE ARCHIVO ---
+const handleFileUpload = async (event: any) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast.add({ severity: 'info', summary: 'Subiendo...', detail: 'Procesando inventario...', life: 2000 });
+
+    try {
+        await assetStore.importAssets(file);
+
+        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Activos importados correctamente', life: 3000 });
+
+        onFilterChange();
+    } catch (e: any) {
+        console.error("Error importación:", e);
+
+        const errors = e.response?.data?.errors;
+        if (Array.isArray(errors) && errors.length > 0) {
+            const flatErrors = errors.flat().slice(0, 3);
+            flatErrors.forEach((errMsg: string) => {
+                toast.add({ severity: 'error', summary: 'Error Excel', detail: errMsg, life: 8000 });
+            });
+            if (errors.flat().length > 3) toast.add({ severity: 'warn', summary: 'Más errores...', detail: 'Revisar archivo completo', life: 5000 });
+        } else if (e.response?.data?.message) {
+            toast.add({ severity: 'error', summary: 'Error', detail: e.response.data.message, life: 5000 });
+        } else {
+            toast.add({ severity: 'error', summary: 'Fallo', detail: 'Error desconocido al importar', life: 5000 });
+        }
+    } finally {
+        if (fileInput.value) fileInput.value.value = '';
+    }
+};
+
+const triggerFileInput = () => {
+    fileInput.value?.click();
+};
+
 let searchTimeout: ReturnType<typeof setTimeout>;
 const onFilterChange = () => {
     clearTimeout(searchTimeout);
@@ -155,7 +191,6 @@ const onFilterChange = () => {
 
 // --- NAVEGACIÓN ---
 const goToDetail = (id: number) => {
-    // Asegúrate de crear esta ruta en tu router después
     router.push({ name: 'AssetDetail', params: { id } });
 };
 
@@ -239,7 +274,7 @@ const exportPDF = async () => {
 // --- CRUD ---
 const openNew = () => {
     form.value = {
-        id: 0, property_id: null, member_id: null, category: '', brand: '', model: '',
+        id: 0, property_id: null, category: '', brand: '', model: '',
         serial_number: '', hilton_name: '', mac_address: '', ip_address: '', status: 'active',
         purchase_date: null, warranty_expiry: null,
 
@@ -252,10 +287,23 @@ const openNew = () => {
 };
 
 const editAsset = (asset: Asset) => {
+    if (asset.assigned_to) {
+        selectedMemberObject.value = {
+            id: asset.assigned_to.member_id,
+            name: asset.assigned_to.name,
+            last_name: asset.assigned_to.last_name,
+            full_name: asset.assigned_to.full_name,
+            corporate_info: {
+                department: asset.assigned_to.department
+            }
+        } as any;
+    } else {
+        selectedMemberObject.value = null;
+    }
+
     form.value = {
         id: asset.id,
         property_id: asset.location.property_id,
-        member_id: asset.assigned_to?.member_id || null,
         category: asset.info.category,
         brand: asset.info.brand || '',
         model: asset.info.model || '',
@@ -294,9 +342,8 @@ const saveAsset = async () => {
 
     const payload: CreateAssetPayload = {
         property_id: form.value.property_id!,
-        member_id: form.value.member_id || null,
-        category: form.value.category,
-
+        member_id: selectedMemberObject.value ? selectedMemberObject.value.id : null,
+        category: form.value.category.trim(),
         brand: form.value.brand?.trim() || null,
         model: form.value.model?.trim() || null,
         serial_number: form.value.serial_number?.trim() || null,
@@ -410,7 +457,8 @@ const getSeverity = (status: string) => {
 </script>
 
 <template>
-    <div class="max-w-[95%] mx-auto p-4">
+    <div class="w-full max-w-none p-4">
+
 
         <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
 
@@ -428,7 +476,16 @@ const getSeverity = (status: string) => {
                             placeholder="Buscar Serial, Marca, Modelo..." class="w-full border-gray-300" />
                     </IconField>
 
-                    <span class="text-gray-300 mx-1 hidden md:inline">|</span>
+                    <div class="flex items-center gap-2">
+                        <input type="file" ref="fileInput" class="hidden" accept=".xlsx, .xls"
+                            @change="handleFileUpload" style="display: none;" />
+
+                        <Button icon="pi pi-upload" severity="help" text rounded
+                            v-tooltip.top="'Carga Masiva de Activos'" class="hover:bg-purple-50 text-purple-600"
+                            @click="triggerFileInput" />
+                        <span class="text-gray-300 mx-1">|</span>
+                    </div>
+
 
                     <div class="flex gap-2">
                         <Button icon="pi pi-file-excel" severity="success" text rounded @click="exportCSV"
@@ -473,7 +530,7 @@ const getSeverity = (status: string) => {
                     </template>
                 </Select>
 
-                <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="name"
+                <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="full_name"
                     placeholder="Buscar Asignado..." class="w-full" @complete="searchMember" showClear dropdown>
                 </AutoComplete>
 
@@ -508,7 +565,7 @@ const getSeverity = (status: string) => {
                 </template>
             </Column>
 
-            <Column header="Serial / Hilton Name">
+            <Column header="Serial / Hilton Name" style="min-width: 150px">
                 <template #body="slotProps">
                     <div class="flex flex-col">
                         <span class="text-sm">{{ slotProps.data.info.serial_number || '-' }}</span>
@@ -522,29 +579,42 @@ const getSeverity = (status: string) => {
                 </template>
             </Column>
 
-            <Column header="Asignado A">
+
+            <Column header="Asignado A" sortable style="min-width: 200px" sortField="assigned_to.full_name">
                 <template #body="slotProps">
                     <div v-if="slotProps.data.assigned_to" class="flex items-center gap-2">
-                        <i class="pi pi-user text-gray-400"></i>
-                        <span class="text-sm">{{ slotProps.data.assigned_to.name }}</span>
+                        <div
+                            class="w-6 h-6 p-2 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">
+                            {{ slotProps.data.assigned_to.name.charAt(0) }}{{
+                                slotProps.data.assigned_to.last_name?.charAt(0) }}
+                        </div>
+
+                        <div class="flex flex-col">
+                            <span class="text-sm font-normal text-gray-700">
+                                {{ slotProps.data.assigned_to.full_name }}
+                            </span>
+                        </div>
                     </div>
-                    <Tag v-else value="En Stock" severity="info" class="text-xs" />
+
+                    <Tag v-else value="En Stock" severity="info" class="text-xs px-2" />
                 </template>
             </Column>
 
-            <Column header="Propiedad">
+            <Column header="Departamento" style="min-width: 200px">
+                <template #body="slotProps">
+                    <span v-if="slotProps.data.assigned_to" class="text-sm">
+                        {{ slotProps.data.assigned_to?.department }}
+                    </span>
+                    <Tag v-else value="Sin Asignación" severity="danger" class="text-xs" />
+                </template>
+            </Column>
+
+            <Column header="Propiedad" style="min-width: 200px">
                 <template #body="slotProps">
                     <span class="text-sm">{{ slotProps.data.location.property_name }}</span>
                 </template>
             </Column>
 
-            <Column header="Departamento">
-                <template #body="slotProps">
-                    <span class="text-sm">
-                        {{ slotProps.data.assigned_to?.department || '-' }}
-                    </span>
-                </template>
-            </Column>
 
             <Column field="status" header="Estado">
                 <template #body="slotProps">
@@ -570,6 +640,7 @@ const getSeverity = (status: string) => {
 
         <Dialog v-model:visible="assetDialog" :header="isEditMode ? 'Editar Activo' : 'Nuevo Activo'" modal
             class="w-full max-w-5xl">
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-2">
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 font-bold text-gray-600">Información General
@@ -601,9 +672,27 @@ const getSeverity = (status: string) => {
                         class="w-full" />
                 </div>
 
-                <div><label class="text-sm block mb-1">Asignado a (Miembro)</label><Select v-model="form.member_id"
-                        :options="membersList" optionLabel="name" optionValue="id" class="w-full" showClear filter
-                        placeholder="Dejar vacío si está en Stock" /></div>
+                <div>
+                    <label class="text-sm block mb-1 font-bold">Asignado a (Miembro)</label>
+                    <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="full_name"
+                        placeholder="Buscar por Nombre o TM ID..." class="w-full" @complete="searchMember"
+                        :dropdown="true" showClear forceSelection>
+                        <template #option="slotProps">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-800">{{ slotProps.option.full_name }}</span>
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <span v-if="slotProps.option.tm_id" class="bg-gray-100 px-1 rounded">{{
+                                        slotProps.option.tm_id }}</span>
+                                    <span>{{ slotProps.option.corporate_info?.department }}</span>
+                                </div>
+                            </div>
+                        </template>
+                        <template #empty>
+                            <div class="p-2 text-sm text-gray-500">No se encontraron resultados.</div>
+                        </template>
+                    </AutoComplete>
+                    <small class="text-gray-400 text-xs">Dejar vacío para Stock.</small>
+                </div>
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Red</div>
 

@@ -32,6 +32,7 @@ export interface Member {
     status: string;
     
     hire_date: string | null;
+    termination_date: string | null;
 
     corporate_info: MemberCorporateInfo; 
     
@@ -56,6 +57,7 @@ export interface CreateMemberPayload {
     
     status?: string;
     hire_date?: string | null; // Formato YYYY-MM-DD
+    termination_date?: string | null; // Formato YYYY-MM-DD
 
     details?: {
         phone?: string;
@@ -72,4 +74,9 @@ export interface MemberListResponse {
         current_page: number;
         last_page: number;
     };
+}
+
+export interface StatsResponse {
+    period: { start: string; end: string };
+    stats: { altas: number; bajas: number; difference: number };
 }

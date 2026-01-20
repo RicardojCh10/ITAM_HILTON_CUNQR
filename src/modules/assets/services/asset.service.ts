@@ -66,6 +66,14 @@ class AssetService {
   async delete(id: number): Promise<void> {
     await httpClient.delete(`${this.BASE_URL}/${id}`);
   }
+
+  async import(formData: FormData): Promise<void> {
+        await httpClient.post(`${this.BASE_URL}/import`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+    }
 }
 
 export const assetService = new AssetService();

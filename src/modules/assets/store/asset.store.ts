@@ -55,5 +55,20 @@ export const useAssetStore = defineStore('asset', () => {
     finally { isLoading.value = false; }
   }
 
-  return { assets, currentAsset, totalRecords, isLoading, fetchAssets, fetchAssetById, createAsset, updateAsset, deleteAsset };
+  async function importAssets(file: File) {
+        isLoading.value = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            await assetService.import(formData);
+        } catch (e) {
+            console.error(e);
+            throw e; 
+        } finally {
+            isLoading.value = false;
+        }
+    }
+
+  return { assets, currentAsset, totalRecords, isLoading, 
+    fetchAssets, fetchAssetById, createAsset, updateAsset, deleteAsset, importAssets };
 });

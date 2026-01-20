@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMemberStore } from '../store/member.store';
 import { useToast } from 'primevue/usetoast';
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
-import type { CreateMemberPayload } from '../types/member.types'; 
+import { ORGANIZATION_CHART, DEPARTMENTS_LIST } from '@/data/organization.data';
+import type { Member, CreateMemberPayload } from '../types/member.types'; 
 
 // Componentes PrimeVue
 import Button from 'primevue/button';
@@ -25,10 +26,12 @@ const toast = useToast();
 const memberId = Number(route.params.id);
 
 // --- ESTADOS ---
+const submitted = ref(false);
 const isEditDialogVisible = ref(false);
 const isDeleteDialogVisible = ref(false);
 const properties = ref<Property[]>([]);
 const statusOptions = ref(['ACTIVO', 'BAJA', 'TERMINADO']);
+const selectedMemberToDelete = ref<Member | null>(null);
 
 // Formulario de Edición 
 const form = ref({
@@ -51,11 +54,26 @@ const form = ref({
     status: 'ACTIVO',
 
     hire_date: null as Date | null,
+    termination_date: null as Date | null,
 
     // Detalles
     phone: '',
     notes: '',
 });
+
+// --- LÓGICA DE PUESTOS DEPENDIENTES ---
+
+const availablePositions = computed(() => {
+    const selectedDept = form.value.department;
+    if (!selectedDept || !ORGANIZATION_CHART[selectedDept]) {
+        return [];
+    }
+    return ORGANIZATION_CHART[selectedDept].sort();
+});
+
+const onDepartmentChange = () => {
+    form.value.position = '';
+};
 
 // --- CICLO DE VIDA ---
 onMounted(async () => {
@@ -111,6 +129,7 @@ const openEdit = () => {
         status: m.status,
 
         hire_date: m.hire_date ? new Date(m.hire_date + 'T12:00:00') : null,
+        termination_date: m.termination_date ? new Date(m.termination_date + 'T12:00:00') : null,
 
         phone: m.details?.phone || '',
         notes: m.details?.notes || '',
@@ -144,6 +163,7 @@ const saveMember = async () => {
 
         // Formato YYYY-MM-DD
         hire_date: form.value.hire_date ? form.value.hire_date.toISOString().split('T')[0] : null,
+        termination_date: form.value.termination_date ? form.value.termination_date.toISOString().split('T')[0] : null,
 
         details: {
             phone: form.value.phone,
@@ -198,7 +218,7 @@ const deleteMember = async () => {
             <div class="flex gap-2">
                 <Button label="Editar Expediente" icon="pi pi-pencil" severity="info" @click="openEdit"
                     class="border-none" />
-                <Button label="Eliminar" icon="pi pi-trash" severity="danger" outlined
+                <Button label="Dar de Baja" icon="pi pi-times-circle" severity="danger" outlined
                     @click="isDeleteDialogVisible = true" />
             </div>
         </div>
@@ -308,6 +328,16 @@ const deleteMember = async () => {
                                     formatDate(store.currentMember.hire_date) : 'Sin fecha' }}</span>
                             </div>
                         </div>
+                        <div>
+                            <span class="text-xs font-bold text-gray-400 uppercase block mb-1">Fecha de
+                                Baja</span>
+                            <div class="flex items-center gap-2 text-gray-700">
+                                <i class="pi pi-calendar-times text-red-500"></i>
+                                <span class="font-medium">{{ store.currentMember.termination_date ?
+                                    formatDate(store.currentMember.termination_date) : 'Sin fecha' }}</span>
+                            </div>
+                        </div>
+
                     </div>
                 </template>
             </Card>
@@ -331,7 +361,6 @@ const deleteMember = async () => {
                         </div>
 
                         <div class="mt-auto pt-6 text-xs text-gray-400 text-center">
-                            ID Interno de Sistema: #{{ store.currentMember.id }}
                             <br>
                             Última sincronización: {{ new Date().toLocaleTimeString() }}
                         </div>
@@ -341,7 +370,7 @@ const deleteMember = async () => {
         </div>
 
         <Dialog v-model:visible="isEditDialogVisible" header="Editar Expediente" modal class="w-full max-w-4xl">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-2">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-2">
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2">
                     <span class="text-gray-600 font-bold text-lg"><i class="pi pi-id-card mr-2"></i>Datos
@@ -352,7 +381,8 @@ const deleteMember = async () => {
                     <label class="block text-sm font-medium mb-1 text-gray-700">Propiedad <span
                             class="text-red-500">*</span></label>
                     <Select v-model="form.property_id" :options="properties" optionLabel="name" optionValue="id"
-                        class="w-full" filter />
+                        placeholder="Seleccionar Hotel" class="w-full" filter />
+                    <small v-if="submitted && !form.property_id" class="text-red-500">Requerido.</small>
                 </div>
 
                 <div class="col-span-1">
@@ -364,12 +394,14 @@ const deleteMember = async () => {
                     <label class="block text-sm font-medium mb-1 text-gray-700">Nombre(s) <span
                             class="text-red-500">*</span></label>
                     <InputText v-model="form.name" class="w-full" />
+                    <small v-if="submitted && !form.name" class="text-red-500">Requerido.</small>
                 </div>
 
                 <div class="col-span-1">
                     <label class="block text-sm font-medium mb-1 text-gray-700">Apellido(s) <span
                             class="text-red-500">*</span></label>
                     <InputText v-model="form.last_name" class="w-full" />
+                    <small v-if="submitted && !form.last_name" class="text-red-500">Requerido.</small>
                 </div>
 
                 <div class="col-span-1 md:col-span-2">
@@ -382,26 +414,29 @@ const deleteMember = async () => {
                         Corporativos</span>
                 </div>
 
-                <div>
-                    <label class="text-sm block mb-1 font-medium text-gray-700">TM ID (Hotel)</label>
+                <div><label class="text-sm block mb-1 font-medium">Código de Team Member (Hotel)</label>
                     <InputText v-model="form.tm_id" class="w-full" />
                 </div>
-                <div>
-                    <label class="text-sm block mb-1 font-medium text-blue-700">Hilton ID (RH)</label>
+                <div><label class="text-sm block mb-1 font-medium ">Código de Hilton (RH)</label>
                     <InputText v-model="form.hilton_id" class="w-full" />
                 </div>
 
-                <div>
-                    <label class="text-sm block mb-1 font-medium">Departamento</label>
-                    <InputText v-model="form.department" class="w-full" />
-                </div>
-                <div>
-                    <label class="text-sm block mb-1 font-medium">Puesto</label>
-                    <InputText v-model="form.position" class="w-full" />
-                </div>
-                <div>
-                    <label class="text-sm block mb-1 font-medium">OnQ ID</label>
+                <div><label class="text-sm block mb-1 font-medium">Código OnQ</label>
                     <InputText v-model="form.onq_id" class="w-full" />
+                </div>
+
+                <div>
+                    <label class="text-sm block mb-1 font-medium text-gray-700">Departamento</label>
+                    <Select v-model="form.department" :options="DEPARTMENTS_LIST"
+                        placeholder="Selecciona un departamento" class="w-full" filter showClear
+                        @change="onDepartmentChange" />
+                </div>
+
+                <div>
+                    <label class="text-sm block mb-1 font-medium text-gray-700">Puesto</label>
+                    <Select v-model="form.position" :options="availablePositions" :disabled="!form.department"
+                        placeholder="Selecciona un puesto" class="w-full" filter showClear
+                        :emptyMessage="form.department ? 'No hay puestos registrados' : 'Primero selecciona un departamento'" />
                 </div>
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4">
@@ -411,7 +446,7 @@ const deleteMember = async () => {
 
                 <div>
                     <label class="text-sm block mb-1 font-medium">Teléfono</label>
-                    <InputText v-model="form.phone" class="w-full" />
+                    <InputText v-model="form.phone" class="w-full" placeholder="+52..." />
                 </div>
 
                 <div>
@@ -419,9 +454,14 @@ const deleteMember = async () => {
                     <Calendar v-model="form.hire_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
                 </div>
 
+                <div>
+                    <label class="text-sm block mb-1 font-medium">Fecha de Baja</label>
+                    <Calendar v-model="form.termination_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
+                </div>
+
                 <div class="col-span-1 md:col-span-2">
-                    <label class="text-sm block mb-1 font-medium">Notas</label>
-                    <Textarea v-model="form.notes" rows="3" class="w-full" autoResize />
+                    <label class="text-sm block mb-1 font-medium">Comentarios</label>
+                    <Textarea v-model="form.notes" rows="2" class="w-full" autoResize />
                 </div>
             </div>
 
@@ -435,18 +475,22 @@ const deleteMember = async () => {
             </template>
         </Dialog>
 
-        <Dialog v-model:visible="isDeleteDialogVisible" header="Confirmar Eliminación" modal class="w-96">
-            <div class="flex items-center gap-3">
-                <i class="pi pi-exclamation-triangle text-3xl text-orange-500"></i>
-                <p class="text-gray-700 leading-relaxed">¿Estás seguro de que deseas eliminar permanentemente el
-                    expediente de
-                    <b>{{ store.currentMember.full_name }}</b>?
-                </p>
+        <Dialog v-model:visible="isDeleteDialogVisible" header="Confirmar Baja" modal class="w-96">
+
+             <div class="flex items-center gap-3">
+                <i class="pi pi-user-minus text-3xl text-orange-500"></i>
+                <div class="text-gray-700 leading-relaxed">
+                    <p>¿Procesar la baja de <b>{{ store.currentMember.full_name }}</b>?</p>
+                    <p class="text-xs text-gray-500 mt-1">El expediente pasará a estado "BAJA" y se guardará la fecha de
+                        hoy.
+                    </p>
+                </div>
             </div>
+
             <template #footer>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button label="Cancelar" text @click="isDeleteDialogVisible = false" />
-                    <Button label="Eliminar Definitivamente" severity="danger" icon="pi pi-trash"
+                    <Button label="Confirmar Baja" severity="danger" icon="pi pi-trash"
                         @click="deleteMember" />
                 </div>
             </template>

@@ -38,13 +38,13 @@ const searchValue = ref('');
 const filterProperty = ref<number | null>(null);
 
 
-  const onFilterChange = () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        lazyParams.value.first = 0;
-        lazyParams.value.page = 0;
-        loadLazyData();
-    }, 500);
+const onFilterChange = () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    lazyParams.value.first = 0;
+    lazyParams.value.page = 0;
+    loadLazyData();
+  }, 500);
 };
 
 // Determina si es borrado masivo o individual
@@ -239,16 +239,18 @@ const getRoleSeverity = (role: string) => {
 </script>
 
 <template>
-  <div class="max-w-7xl mx-auto p-4">
+  <div class="w-full max-w-none p-4">
+
+    <!-- <div class="max-w-7xl mx-auto p-4"> -->
 
     <Toolbar class="flex flex-col md:flex-row items-center justify-between mb-4 gap-4 shadow-sm border-gray-200">
       <template #start>
         <div class="flex gap-2">
           <Button label="Nuevo Usuario" icon="pi pi-plus" class=" text-white border-none" @click="openNew" />
-          
-           <Select v-model="filterProperty" :options="properties" optionLabel="name" optionValue="id"
-                        placeholder="Filtrar por Propiedad" class="w-48 sm:w-60" showClear filter
-                        @change="onFilterChange" @clear="onFilterChange" />
+
+          <Select v-model="filterProperty" :options="properties" optionLabel="name" optionValue="id"
+            placeholder="Filtrar por Propiedad" class="w-48 sm:w-60" showClear filter @change="onFilterChange"
+            @clear="onFilterChange" />
 
           <Button label="Eliminar Selección" icon="pi pi-trash" severity="danger" outlined
             :disabled="!selectedUsers || !selectedUsers.length" @click="confirmDeleteSelected" />
@@ -330,14 +332,14 @@ const getRoleSeverity = (role: string) => {
         </div>
 
         <div>
-          <label for="name" class="block text-sm font-medium mb-1 text-gray-700">Nombre <span
+          <label for="name" class="block text-sm font-medium mb-1 text-gray-700">Nombres <span
               class="text-red-500">*</span></label>
           <InputText id="name" v-model="userForm.name" class="w-full" @keypress="(e) => blockSpecialChars(e, 'text')" />
           <small v-if="submitted && !userForm.name?.trim()" class="text-red-500">Requerido.</small>
         </div>
 
         <div>
-          <label for="last_name" class="block text-sm font-medium mb-1 text-gray-700">Apellido</label>
+          <label for="last_name" class="block text-sm font-medium mb-1 text-gray-700">Apellidos</label>
           <InputText id="last_name" v-model="userForm.last_name" class="w-full"
             @keypress="(e) => blockSpecialChars(e, 'text')" />
         </div>

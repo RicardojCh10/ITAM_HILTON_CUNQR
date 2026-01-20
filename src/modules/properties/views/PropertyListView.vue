@@ -133,7 +133,9 @@ const deleteProperty = async () => {
 </script>
 
 <template>
-    <div class="max-w-7xl mx-auto p-4">
+    <div class="w-full max-w-none p-4">
+
+        <!-- <div class="max-w-7xl mx-auto p-4"> -->
         <Toolbar class="flex flex-col md:flex-row items-center justify-between mb-4 gap-4">
             <template #start>
                 <Button label="Nueva Propiedad" icon="pi pi-plus" class="bg-blue-500 hover:bg-blue-600 text-white mr-3"
