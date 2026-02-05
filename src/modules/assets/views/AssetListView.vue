@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, provide } from 'vue';
 import { watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
@@ -10,7 +10,7 @@ import type { Asset, CreateAssetPayload } from '../types/asset.types';
 // Servicios auxiliares para dropdowns
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
 import { memberService } from '@/modules/members/services/member.service';
-import type { Member } from '@/modules/members/types/member.types';
+import { providerService } from '@/modules/providers/services/provider.service';
 
 // Exportación
 import * as XLSX from 'xlsx';
@@ -47,7 +47,6 @@ const fileInput = ref<HTMLInputElement | null>(null);
 
 // --- LISTAS PARA DROPDOWNS ---
 const properties = ref<Property[]>([]);
-// const membersList = ref<any[]>([]);
 const categoryOptions = ref(['Laptop', 'Desktop', 'Monitor', 'Printer', 'Server', 'Tablet', 'Access Point', 'Switch', 'Phone', 'Other']);
 
 // --- ESTADO PARA ELIMINAR ---
@@ -61,6 +60,8 @@ const filterStatus = ref<string | null>(null);
 const filterMember = ref<number | null>(null);
 const filteredMembers = ref<any[]>([]);
 const selectedMemberObject = ref<any>(null);
+const filteredProviders = ref<any[]>([]);
+const selectedProviderObject = ref<any>(null);
 
 // --- FORMULARIO ---
 const form = ref({
@@ -82,7 +83,7 @@ const form = ref({
     ram: '',
     storage: '',
     processor: '',
-    provider: '',
+    // provider: '',
     imei: '',
     sim: '',
     plan: '',
@@ -105,10 +106,29 @@ const searchMember = async (event: AutoCompleteCompleteEvent) => {
     }
 };
 
+const searchProvider = async (event: AutoCompleteCompleteEvent) => {
+    const query = event.query.trim();
+    if (!query) return;
+
+    try {
+        const response = await providerService.getAll(1, 20, query);
+        filteredProviders.value = response.data;
+    } catch (e) {
+        console.error("Error buscando proveedor", e);
+    }
+};
+
 
 watch(selectedMemberObject, (newValue) => {
     if (!assetDialog.value) {
         filterMember.value = newValue ? newValue.id : null;
+        onFilterChange();
+    }
+});
+
+watch(selectedProviderObject, (newValue) => {
+    if (!assetDialog.value) {
+        // filterProvider.value = newValue ? newValue.id : null;
         onFilterChange();
     }
 });
@@ -278,7 +298,7 @@ const openNew = () => {
         serial_number: '', hilton_name: '', mac_address: '', ip_address: '', status: 'active',
         purchase_date: null, warranty_expiry: null,
 
-        ram: '', storage: '', processor: '', provider: '',
+        ram: '', storage: '', processor: '', // provider: '',
         imei: '', sim: '', plan: '', carrier: '', phone_number: '', description: ''
     };
     submitted.value = false;
@@ -301,6 +321,19 @@ const editAsset = (asset: Asset) => {
         selectedMemberObject.value = null;
     }
 
+    if (asset.provider) {
+        selectedProviderObject.value = {
+            id: asset.provider.provider_id,
+            name: asset.provider.name,
+            tax_id: asset.provider.tax_id,
+            email: asset.provider.email,
+            phone: asset.provider.phone,
+            contact_name: asset.provider.contact_name
+        } as any;
+    } else {
+        selectedProviderObject.value = null;
+    }
+
     form.value = {
         id: asset.id,
         property_id: asset.location.property_id,
@@ -318,7 +351,7 @@ const editAsset = (asset: Asset) => {
         ram: asset.specs?.ram || '',
         storage: asset.specs?.storage || '',
         processor: asset.specs?.processor || '',
-        provider: asset.specs?.provider || '',
+        // provider: asset.specs?.provider || '',
         imei: asset.specs?.imei || '',
         sim: asset.specs?.sim || '',
         plan: asset.specs?.plan || '',
@@ -343,6 +376,8 @@ const saveAsset = async () => {
     const payload: CreateAssetPayload = {
         property_id: form.value.property_id!,
         member_id: selectedMemberObject.value ? selectedMemberObject.value.id : null,
+        provider_id: selectedProviderObject.value ? selectedProviderObject.value.id : null,
+
         category: form.value.category.trim(),
         brand: form.value.brand?.trim() || null,
         model: form.value.model?.trim() || null,
@@ -365,7 +400,7 @@ const saveAsset = async () => {
             ram: form.value.ram,
             storage: form.value.storage,
             processor: form.value.processor,
-            provider: form.value.provider,
+            // provider: form.value.provider,
             imei: form.value.imei,
             sim: form.value.sim,
             plan: form.value.plan,
@@ -662,6 +697,26 @@ const getSeverity = (status: string) => {
                 <div><label class="text-sm block mb-1">Hilton Name</label>
                     <InputText v-model="form.hilton_name" class="w-full" />
                 </div>
+                <div>
+                    <label class="text-sm block mb-1 font-bold">Proveedor</label>
+                    <AutoComplete v-model="selectedProviderObject" :suggestions="filteredProviders" optionLabel="name"
+                        placeholder="Buscar por Proveedor" class="w-full" @complete="searchProvider" :dropdown="true"
+                        showClear forceSelection>
+                        <template #option="slotProps">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-800">{{ slotProps.option.name }}</span>
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <span v-if="slotProps.option.tax_id" class="bg-gray-100 px-1 rounded">{{
+                                        slotProps.option.tax_id }}</span>
+                                </div>
+                            </div>
+                        </template>
+                        <template #empty>
+                            <div class="p-2 text-sm text-gray-500">No se encontraron resultados.</div>
+                        </template>
+                    </AutoComplete>
+                    <small class="text-gray-400 text-xs">Sin proveedor asignado.</small>
+                </div>
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Estado y
                     Asignación</div>
@@ -694,6 +749,8 @@ const getSeverity = (status: string) => {
                     <small class="text-gray-400 text-xs">Dejar vacío para Stock.</small>
                 </div>
 
+
+
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Red</div>
 
                 <div><label class="text-sm block mb-1">MAC Address</label>
@@ -721,9 +778,7 @@ const getSeverity = (status: string) => {
                 </div>
 
                 <div class="grid grid-cols-3 gap-2 col-span-2">
-                    <div><label class="text-sm block mb-1">Proveedor</label>
-                        <InputText v-model="form.provider" class="w-full" />
-                    </div>
+
                     <div><label class="text-sm block mb-1">Fecha Compra</label>
                         <Calendar v-model="form.purchase_date" showIcon class="w-full" />
                     </div>

@@ -33,10 +33,20 @@ const items = ref([
         icon: 'pi pi-id-card',
         route: '/dashboard/members' 
     },
+    // {
+    //     label: 'Proveedores',
+    //     icon: 'pi pi-briefcase',
+    //     route: '/dashboard/providers' 
+    // },
     {
         label: 'Inventario',
         icon: 'pi pi-box',
         route: '/dashboard/assets' 
+    },
+    {
+        label: 'Mantenimiento',
+        icon: 'pi pi-verified',
+        route: '/dashboard/maintenance' 
     }
 ]);
 

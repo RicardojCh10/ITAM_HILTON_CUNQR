@@ -16,11 +16,12 @@ export const useAssetStore = defineStore('asset', () => {
       propertyId?: number, 
       category?: string, 
       status?: string,
-      memberId?: number
+      memberId?: number,
+      providerId?: number,
   ) {
     isLoading.value = true;
     try {
-      const response = await assetService.getAll(page, perPage, search, propertyId, category, status, memberId);
+      const response = await assetService.getAll(page, perPage, search, propertyId, category, status, memberId, providerId);
       assets.value = response.data;
       totalRecords.value = response.meta?.total || response.data.length; 
     } catch (e) {

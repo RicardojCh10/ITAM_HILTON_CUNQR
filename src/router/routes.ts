@@ -56,6 +56,17 @@ export const routes: RouteRecordRaw[] = [
           roles: ['admin']
         }
       },
+
+      //Ruta: /dashboard/providers
+      {
+        path: 'providers',
+        name: 'ProviderList',
+        component: () => import('@/modules/providers/views/ProviderListView.vue'),
+        meta: {
+          title: 'Gestión de Proveedores',
+          roles: ['admin']
+        }
+      },
       {
         // Ruta: /dashboard/members
         path: 'members',
@@ -87,6 +98,16 @@ export const routes: RouteRecordRaw[] = [
         name: 'AssetDetail',
         component: () => import('@/modules/assets/views/AssetDetailView.vue'),
         meta: { title: 'Detalles del Activo' }
+      },
+      // Ruta: /dashboard/maintenance
+      {
+        path: 'maintenance',
+        name: 'MaintenanceList',
+        component: () => import('@/modules/maintenance/views/MaintenanceListView.vue'),
+        meta: {
+          title: 'Gestión de Mantenimiento',
+          roles: ['admin']
+        }
       },
 
     ]

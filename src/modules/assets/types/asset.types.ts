@@ -2,24 +2,34 @@ export interface AssetSpecs {
     ram?: string | null;
     storage?: string | null;
     processor?: string | null;
-    provider?: string | null;
+    // provider?: string | null;
 
-    imei?: string | null;          
-    sim?: string | null;          
-    plan?: string | null;          
-    carrier?: string | null;       
-    phone_number?: string | null;  
-    
+    imei?: string | null;
+    sim?: string | null;
+    plan?: string | null;
+    carrier?: string | null;
+    phone_number?: string | null;
+
     description?: string | null;
 }
 
 export interface AssetMemberLite {
     member_id: number;
-    name: string;      
-    last_name: string; 
-    full_name: string; 
-    department?: string;
     tm_id?: string;
+    name: string;
+    last_name: string;
+    full_name: string;
+    position?: string;
+    department?: string;
+}
+
+export interface AssetProvider {
+    provider_id: number;
+    name: string;
+    tax_id?: string;
+    email?: string;
+    phone?: string;
+    contact_name?: string;
 }
 
 export interface Asset {
@@ -29,6 +39,7 @@ export interface Asset {
         property_name: string;
     };
     assigned_to?: AssetMemberLite | null;
+    provider?: AssetProvider | null;
     info: {
         category: string;
         brand: string | null;
@@ -59,22 +70,23 @@ export interface AssetListResponse {
 
 export interface CreateAssetPayload {
     property_id: number;
-    member_id?: number | null; 
+    member_id?: number | null;
+    provider_id?: number | null;
     category: string;
-    brand?: string | null;    
-    model?: string | null;    
+    brand?: string | null;
+    model?: string | null;
     serial_number?: string | null;
     hilton_name?: string | null;
-    
+
     // RED 
-    mac_address?: string | null; 
+    mac_address?: string | null;
     ip_address?: string | null;
-    
+
     status: string;
-    
+
     // FECHAS
     purchase_date?: string | null;
     warranty_expiry?: string | null;
-    
+
     specs?: AssetSpecs;
 }

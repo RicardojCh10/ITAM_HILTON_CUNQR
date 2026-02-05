@@ -11,7 +11,8 @@ class AssetService {
     propertyId?: number,
     category?: string,
     status?: string,
-    memberId?: number
+    memberId?: number,
+    providerId?: number
   ): Promise<AssetListResponse> {
     
     const params = new URLSearchParams();
@@ -23,6 +24,7 @@ class AssetService {
     if (category) params.append('category', category);
     if (status) params.append('status', status);
     if (memberId) params.append('member_id', memberId.toString());
+    if (providerId) params.append('provider_id', providerId.toString());
 
     const response = await httpClient.get<AssetListResponse>(`${this.BASE_URL}?${params.toString()}`);
     return response.data; 

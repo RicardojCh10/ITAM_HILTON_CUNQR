@@ -10,6 +10,7 @@ import type { Asset, CreateAssetPayload } from '../types/asset.types';
 // Servicios para el Formulario
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
 import { memberService } from '@/modules/members/services/member.service';
+import { providerService } from '@/modules/providers/services/provider.service';
 import type { Member } from '@/modules/members/types/member.types';
 
 // Componentes PrimeVue
@@ -42,9 +43,10 @@ const editDialog = ref(false);
 const submitted = ref(false);
 
 const properties = ref<Property[]>([]);
-const membersList = ref<Member[]>([]);
 const filteredMembers = ref<any[]>([]);
 const selectedMemberObject = ref<Member | null>(null);
+const filteredProviders = ref<any[]>([]);
+const selectedProviderObject = ref<any>(null);
 const categoryOptions = ref(['Laptop', 'Desktop', 'Monitor', 'Printer', 'Server', 'Tablet', 'Access Point', 'Switch', 'Phone', 'Celular', 'Other']);
 
 const statusOptions = ref([
@@ -62,6 +64,7 @@ const form = ref({
     id: 0,
     property_id: null as number | null,
     member_id: null as number | null,
+    provider_id: null as number | null,
     category: '',
     status: 'active',
     brand: '',
@@ -80,7 +83,7 @@ const form = ref({
         ram: '',
         storage: '',
         processor: '',
-        provider: '',
+        // provider: '',
         imei: '',
         sim: '',
         plan: '',
@@ -101,7 +104,7 @@ const specDefinitions: Record<string, { label: string, icon: string, color: stri
     'processor': { label: 'Procesador', icon: 'fa-solid fa-microchip', color: 'text-purple-600', bg: 'bg-purple-50' },
     'ram': { label: 'Memoria RAM', icon: 'fa-solid fa-memory', color: 'text-blue-600', bg: 'bg-blue-50' },
     'storage': { label: 'Almacenamiento', icon: 'fa-solid fa-hard-drive', color: 'text-green-600', bg: 'bg-green-50' },
-    'provider': { label: 'Proveedor', icon: 'fa-solid fa-truck-fast', color: 'text-orange-600', bg: 'bg-orange-50' },
+    // 'provider': { label: 'Proveedor', icon: 'fa-solid fa-truck-fast', color: 'text-orange-600', bg: 'bg-orange-50' },
     'screen_size': { label: 'Pantalla', icon: 'fa-solid fa-expand', color: 'text-cyan-600', bg: 'bg-cyan-50' },
     'os': { label: 'Sistema Op.', icon: 'fa-brands fa-windows', color: 'text-gray-600', bg: 'bg-gray-50' },
 
@@ -132,7 +135,7 @@ const formattedSpecs = computed(() => {
 onMounted(async () => {
     const id = Number(route.params.id);
     if (!id) { router.push({ name: 'AssetList' }); return; }
-    
+
     loading.value = true;
     try {
         // Carga paralela de Asset, Propiedades y Miembros
@@ -158,29 +161,36 @@ const loadAsset = async (id: number) => {
     } catch (e) { console.error(e) }
 }
 
-
 const searchMember = async (event: any) => {
     const query = event.query.trim();
-    
     if (!query) return;
 
     try {
-        const response = await memberService.getAll(
-            1,   
-            20,  
-            query 
-        );
+        const response = await memberService.getAll(1, 20, query);
         filteredMembers.value = response.data;
     } catch (e) {
-        console.error("Error buscando miembros", e);
+        console.error("Error buscando miembro", e);
     }
 };
+
+const searchProvider = async (event: any) => {
+    const query = event.query.trim();
+    if (!query) return;
+
+    try {
+        const response = await providerService.getAll(1, 20, query);
+        filteredProviders.value = response.data;
+    } catch (e) {
+        console.error("Error buscando proveedor", e);
+    }
+};
+
 
 // --- ACCIONES ---
 
 // 1. ABRIR EDICIÓN 
 const openEdit = async () => {
-   
+
     if (!asset.value) return;
     const a = asset.value;
 
@@ -193,18 +203,32 @@ const openEdit = async () => {
             tm_id: a.assigned_to.tm_id,
             corporate_info: {
                 department: a.assigned_to.department,
-                position: '', 
+                position: a.assigned_to.position,
                 onq_id: ''
             },
-        } as unknown as Member; 
+        } as unknown as Member;
     } else {
         selectedMemberObject.value = null;
+    }
+
+    if (a.provider) {
+        selectedProviderObject.value = {
+            id: a.provider.provider_id,
+            name: a.provider.name,
+            tax_id: a.provider.tax_id,
+            email: a.provider.email,
+            phone: a.provider.phone,
+            contact_name: a.provider.contact_name
+        } as any;
+    } else {
+        selectedProviderObject.value = null;
     }
 
     form.value = {
         id: a.id,
         property_id: a.location.property_id,
         member_id: a.assigned_to?.member_id || null,
+        provider_id: a.provider?.provider_id || null,
         category: a.info.category,
         status: a.status,
         brand: a.info.brand || '',
@@ -216,12 +240,12 @@ const openEdit = async () => {
 
         purchase_date: a.dates.purchase ? new Date(a.dates.purchase) : null,
         warranty_expiry: a.dates.warranty ? new Date(a.dates.warranty) : null,
-        
+
         specs: {
             ram: a.specs?.ram || '',
             storage: a.specs?.storage || '',
             processor: a.specs?.processor || '',
-            provider: a.specs?.provider || '',
+            // provider: a.specs?.provider || '',
             imei: asset.value.specs?.imei || '',
             sim: a.specs?.sim || '',
             plan: a.specs?.plan || '',
@@ -241,6 +265,7 @@ const saveAsset = async () => {
     const payload: CreateAssetPayload = {
         property_id: form.value.property_id,
         member_id: selectedMemberObject.value ? selectedMemberObject.value.id : null,
+        provider_id: selectedProviderObject.value ? selectedProviderObject.value.id : null,
         category: form.value.category,
         status: form.value.status,
 
@@ -258,7 +283,7 @@ const saveAsset = async () => {
             ram: form.value.specs.ram,
             storage: form.value.specs.storage,
             processor: form.value.specs.processor,
-            provider: form.value.specs.provider,
+            // provider: form.value.specs.provider,
 
             // CORRECCIÓN: Enviar datos móviles al backend
             imei: form.value.specs.imei,
@@ -316,18 +341,6 @@ const reportFailure = () => {
         }
     });
 };
-
-
-// Helper para Autocomplete Miembros
-// const searchMember = (event: any) => {
-//     const query = event.query.toLowerCase();
-
-//     filteredMembers.value = membersList.value.filter(member => {
-//         return member.name.toLowerCase().includes(query) ||
-//             (member.tm_id && member.tm_id.toLowerCase().includes(query));
-//     });
-// };
-
 
 const formatStatus = (status: string) => {
     const map: Record<string, string> = {
@@ -438,18 +451,41 @@ const copyToClipboard = (text: string | null) => {
                         <template #content>
                             <div v-if="asset.assigned_to" class="text-center p-4  rounded-lg ">
 
-                                <div
-                                    class="w-16 h-16 rounded-full bg-white border-2 border-indigo-200 text-indigo-600 flex items-center justify-center text-xl font-bold mx-auto mb-3 ">
-                                    {{ asset.assigned_to.name?.charAt(0) }}{{ asset.assigned_to.last_name?.charAt(0) }}
+                                <div class="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+                                    <div
+                                        class="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                                        <span class="text-indigo-600 font-bold text-lg tracking-tight">
+                                            {{ asset.assigned_to.name?.charAt(0) }}{{
+                                                asset.assigned_to.last_name?.charAt(0) }}
+                                        </span>
+                                    </div>
+
+                                    <div class="overflow-hidden">
+                                        <h3 class="font-bold text-gray-800 text-lg leading-tight truncate"
+                                            :title="asset.assigned_to.full_name">
+                                            {{ asset.assigned_to.full_name }}
+                                        </h3>
+                                        <p class="text-xs text-gray-500 font-medium truncate"
+                                            :title="asset.assigned_to.position">
+                                            {{ asset.assigned_to.position || 'Puesto no especificado' }}
+                                        </p>
+                                    </div>
                                 </div>
 
-                                <h3 class="font-semibold text-gray-800 text-lg">
-                                    {{ asset.assigned_to.full_name }}
-                                </h3>
+                                <div class="flex-1 space-y-3 mb-4">
 
-                                <span class="text-sm text-gray-500 block mb-1">
-                                    {{ asset.assigned_to.department || 'Sin Departamento' }}
-                                </span>
+                                    <div class="flex items-start gap-3 bg-gray-50 p-2 rounded-md">
+                                        <i class="pi pi-id-card text-indigo-500 mt-1"></i>
+                                        <div>
+                                            <span
+                                                class="block text-[10px] text-gray-400 uppercase font-bold tracking-wider">Team
+                                                Member ID</span>
+                                            <span class="text-sm text-gray-800 font-mono font-medium">
+                                                {{ asset.assigned_to.tm_id || 'N/A' }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <div class="p-3">
                                     <Button label="Ver Expediente" severity="info" icon="pi pi-external-link"
@@ -469,23 +505,126 @@ const copyToClipboard = (text: string | null) => {
                     <Card class="shadow-sm border border-gray-100">
                         <template #title>
                             <div class="flex items-center gap-2 text-lg text-gray-800"><i
-                                    class="pi pi-building text-blue-600"></i> Ubicación</div>
+                                    class="pi pi-truck text-orange-600"></i> Proveedor</div>
                         </template>
                         <template #content>
-                            <div class="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
-                                <i class="pi pi-map-marker text-red-500 text-xl"></i>
-                                <div>
-                                    <span class="block text-xs text-gray-500 font-semibold uppercase">Propiedad
-                                        Actual</span>
-                                    <span class="font-semibold text-sm text-gray-800">{{ asset.location.property_name
-                                        }}</span>
+                            <div v-if="asset.provider" class="flex flex-col h-full">
+
+                                <div class="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+                                    <div
+                                        class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                        <i class="pi pi-building text-blue-600 text-xl"></i>
+                                    </div>
+                                    <div class="overflow-hidden">
+                                        <h3 class="font-bold text-gray-800 text-lg truncate"
+                                            :title="asset.provider.name">
+                                            {{ asset.provider.name }}
+                                        </h3>
+                                        <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                                            {{ asset.provider.tax_id || 'N/A' }}
+                                        </p>
+                                    </div>
                                 </div>
+
+                                <div class="flex-1 space-y-3 mb-4">
+
+                                    <div class="flex items-start gap-3">
+                                        <i class="pi pi-user text-gray-400 mt-1"></i>
+                                        <div>
+                                            <span class="block text-xs text-gray-400">Contacto Directo</span>
+                                            <span class="text-sm text-gray-700 font-medium">
+                                                {{ asset.provider.contact_name || 'No especificado' }}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-3">
+                                        <i class="pi pi-envelope text-gray-400 mt-1"></i>
+                                        <div class="overflow-hidden">
+                                            <span class="text-sm text-gray-600 ">
+                                                <a v-if="asset.provider.email" :href="`mailto:${asset.provider.email}`"
+                                                    class="hover:text-blue-600 hover:underline">
+                                                    {{ asset.provider.email }}
+                                                </a>
+                                                <span v-else class="text-gray-400 italic">Sin correo</span>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start gap-3">
+                                        <i class="pi pi-phone text-gray-400 mt-1"></i>
+                                        <div>
+                                            <span class="text-sm text-gray-600">
+                                                {{ asset.provider.phone || 'Sin teléfono' }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-auto pt-2">
+                                    <Button label="Ver Detalles" icon="pi pi-external-link" size="small" outlined
+                                        class="w-full text-xs"
+                                        @click="router.push({ name: 'ProviderList', query: { search: asset.provider.name } })" />
+                                </div>
+                            </div>
+
+                            <div v-else
+                                class="h-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                                <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-2">
+                                    <i class="pi pi-box text-xl text-gray-400"></i>
+                                </div>
+                                <p class="text-gray-600 font-medium text-sm">Sin Proveedor</p>
+                                <p class="text-xs text-gray-400 text-center mt-1">
+                                    Edita este activo para asignar un origen de compra.
+                                </p>
                             </div>
                         </template>
                     </Card>
+
                 </div>
 
                 <div class="lg:col-span-2 space-y-6">
+
+                    <Panel header="Ubicación Física" toggleable>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+
+                            <div class="p-3 shadow rounded-lg bg-white flex justify-between items-center group">
+
+                                <div class="overflow-hidden">
+                                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-0.5"">
+                                        <i class="pi pi-building text-lg mr-2 text-blue-600"></i> Propiedad
+                                    </span>
+                                    <div class="font-semibold text-gray-800 text-base truncate"
+                                        :title="asset.location.property_name">
+                                        {{ asset.location.property_name || 'Sin Configurar' }}
+                                    </div>
+                                    <p v-if="asset.location.property_name" class="text-xs text-gray-400 mt-1">
+                                        Ubicación Principal
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="p-3 shadow rounded-lg bg-white flex justify-between items-center group">
+                                <div class="overflow-hidden">
+                                   
+                                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-0.5"">
+                                        <i class="pi pi-sitemap text-lg mr-2 text-blue-600"></i> Departamento
+                                    </span>
+
+                                    <div class="font-semibold text-base truncate"
+                                        :class="asset.assigned_to?.department ? 'text-gray-800' : 'text-gray-400 italic'">
+                                        {{ asset.assigned_to?.department || 'En Almacén / IT' }}
+                                    </div>
+
+                                    <p class="text-xs text-gray-400 mt-1">
+                                        {{ asset.assigned_to?.department ? 'Según asignación actual' : 'Pendiente de asignación' }}
+                                    </p>
+                                </div>
+                            </div>
+
+                        </div>
+                    </Panel>
 
                     <Panel header="Red y Conectividad" toggleable>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -540,18 +679,18 @@ const copyToClipboard = (text: string | null) => {
                                 <span class="block text-xs text-green-700 font-semibold uppercase mb-1">Fecha de
                                     Compra</span>
                                 <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.purchase)
-                                    }}</span>
+                                }}</span>
                             </div>
                             <div class="flex-1 p-3 bg-red-50 rounded-lg border border-red-100">
                                 <span class="block text-xs text-red-700 font-semibold uppercase mb-1">Fin de
                                     Garantía</span>
                                 <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.warranty)
-                                    }}</span>
+                                }}</span>
                             </div>
                             <div class="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
                                 <span class="block text-xs text-gray-500 font-semibold uppercase mb-1">Registro</span>
                                 <span class="text-sm text-gray-600 font-medium">{{ formatDate(asset.created_at)
-                                    }}</span>
+                                }}</span>
                             </div>
                         </div>
                     </Panel>
@@ -585,6 +724,26 @@ const copyToClipboard = (text: string | null) => {
                 </div>
                 <div><label class="text-sm block mb-1">Hilton Name</label>
                     <InputText v-model="form.hilton_name" class="w-full" />
+                </div>
+                <div>
+                    <label class="text-sm block mb-1 font-bold">Proveedor</label>
+                    <AutoComplete v-model="selectedProviderObject" :suggestions="filteredProviders" optionLabel="name"
+                        placeholder="Buscar por Proveedor" class="w-full" @complete="searchProvider" :dropdown="true"
+                        showClear forceSelection>
+                        <template #option="slotProps">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-800">{{ slotProps.option.name }}</span>
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <span v-if="slotProps.option.tax_id" class="bg-gray-100 px-1 rounded">{{
+                                        slotProps.option.tax_id }}</span>
+                                </div>
+                            </div>
+                        </template>
+                        <template #empty>
+                            <div class="p-2 text-sm text-gray-500">No se encontraron resultados.</div>
+                        </template>
+                    </AutoComplete>
+                    <small class="text-gray-400 text-xs">Sin proveedor asignado.</small>
                 </div>
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Estado y
@@ -650,9 +809,9 @@ const copyToClipboard = (text: string | null) => {
                 </div>
 
                 <div class="grid grid-cols-3 gap-2 col-span-2">
-                    <div><label class="text-sm block mb-1">Proveedor</label>
+                    <!-- <div><label class="text-sm block mb-1">Proveedor</label>
                         <InputText v-model="form.specs.provider" class="w-full" />
-                    </div>
+                    </div> -->
                     <div><label class="text-sm block mb-1">Fecha Compra</label>
                         <Calendar v-model="form.purchase_date" showIcon class="w-full" />
                     </div>
