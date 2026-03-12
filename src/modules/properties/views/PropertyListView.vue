@@ -148,7 +148,7 @@ const deleteProperty = async () => {
             currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} propiedades">
             <template #header>
                 <div class="flex flex-wrap gap-2 items-center justify-between">
-                    <h4 class="m-0 text-lg font-bold">Gestión de Propiedades</h4>
+                    <h4 class="m-0 text-xl font-bold">Gestión de Propiedades</h4>
                     <IconField iconPosition="left">
                         <InputIcon>
                             <i class="pi pi-search text-gray-500" />

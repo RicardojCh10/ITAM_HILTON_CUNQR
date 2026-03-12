@@ -294,7 +294,7 @@ const formatCurrency = (val: number) => new Intl.NumberFormat('es-MX', { style: 
             <Column header="Activo">
                 <template #body="slotProps">
                     <div class="font-bold text-gray-800">{{ slotProps.data.asset.hilton_name }}</div>
-                    <div class="text-xs text-gray-500 mb-1">{{ slotProps.data.asset.category }} - {{ slotProps.data.asset.serial_number }}</div>
+                    <div class="text-xs text-gray-500 mb-1">{{ slotProps.data.asset.category.name }} - {{ slotProps.data.asset.serial_number }}</div>
                 </template>
             </Column>
 

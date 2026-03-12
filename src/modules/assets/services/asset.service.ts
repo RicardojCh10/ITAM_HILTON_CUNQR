@@ -9,10 +9,11 @@ class AssetService {
     perPage: number = 15, 
     search: string = '', 
     propertyId?: number,
-    category?: string,
+    categoryId?: number,
     status?: string,
     memberId?: number,
-    providerId?: number
+    providerId?: number,
+    departmentId?: number
   ): Promise<AssetListResponse> {
     
     const params = new URLSearchParams();
@@ -21,23 +22,25 @@ class AssetService {
     
     if (search) params.append('search', search);
     if (propertyId) params.append('property_id', propertyId.toString());
-    if (category) params.append('category', category);
+    if (categoryId) params.append('category_id', categoryId.toString());
     if (status) params.append('status', status);
     if (memberId) params.append('member_id', memberId.toString());
     if (providerId) params.append('provider_id', providerId.toString());
+    if (departmentId) params.append('department_id', departmentId.toString());
 
     const response = await httpClient.get<AssetListResponse>(`${this.BASE_URL}?${params.toString()}`);
     return response.data; 
   }
+
 
   async getById(id: number): Promise<Asset> {
     const response = await httpClient.get<{ data: Asset }>(`${this.BASE_URL}/${id}`);
     return response.data.data || response.data;
   }
 
-  async downloadAssignmentPdf(id: number): Promise<void> {
-    const response = await httpClient.get(`/assets/${id}/download-assignment`, {
-        responseType: 'blob' // Esto es vital para que Axios no intente leerlo como JSON
+  async downloadAssignmentPdf(memberId: number): Promise<void> {
+    const response = await httpClient.get(`/members/${memberId}/download-assignment`, {
+        responseType: 'blob' 
     });
     
     const blob = new Blob([response.data as any], { type: 'application/pdf' });
@@ -46,7 +49,7 @@ class AssetService {
     const link = document.createElement('a');
     link.href = url;
     
-    link.setAttribute('download', `Acta_Asignacion_${id}.pdf`); 
+    link.setAttribute('download', `Acta_Asignacion_Miembro_${memberId}.pdf`); 
     
     document.body.appendChild(link);
     link.click();

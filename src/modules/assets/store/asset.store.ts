@@ -14,14 +14,15 @@ export const useAssetStore = defineStore('asset', () => {
       perPage: number = 15, 
       search: string = '', 
       propertyId?: number, 
-      category?: string, 
+      categoryId?: number, 
       status?: string,
       memberId?: number,
       providerId?: number,
+      departmentId?: number
   ) {
     isLoading.value = true;
     try {
-      const response = await assetService.getAll(page, perPage, search, propertyId, category, status, memberId, providerId);
+      const response = await assetService.getAll(page, perPage, search, propertyId, categoryId, status, memberId, providerId, departmentId);
       assets.value = response.data;
       totalRecords.value = response.meta?.total || response.data.length; 
     } catch (e) {

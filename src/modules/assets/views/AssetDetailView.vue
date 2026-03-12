@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from "primevue/useconfirm";
@@ -10,22 +10,27 @@ import type { Asset, CreateAssetPayload } from '../types/asset.types';
 // Servicios para el Formulario
 import { listProperties, type Property } from '@/modules/properties/services/property.service';
 import { memberService } from '@/modules/members/services/member.service';
-import { providerService } from '@/modules/providers/services/provider.service';
 import type { Member } from '@/modules/members/types/member.types';
+import { providerService } from '@/modules/providers/services/provider.service';
+import { departmentService, listDepartments, type Department } from '@/modules/department/services/department.service';
+import { categoryService, listCategories } from '@/modules/assets_category/services/category.service'; // NUEVO: Importamos categorías
+import type { Category } from '@/modules/assets_category/types/category.types';
 
 // Componentes PrimeVue
 import Card from 'primevue/card';
 import Tag from 'primevue/tag';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
-import Divider from 'primevue/divider';
 import Panel from 'primevue/panel';
 import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
+import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import Calendar from 'primevue/calendar';
-import AutoComplete from 'primevue/autocomplete';
 import ConfirmDialog from 'primevue/confirmdialog';
+import AutoComplete from 'primevue/autocomplete';
+import type { AutoCompleteCompleteEvent } from 'primevue/autocomplete';
+
 
 const route = useRoute();
 const router = useRouter();
@@ -36,18 +41,21 @@ const assetStore = useAssetStore();
 // --- ESTADO ---
 const asset = ref<Asset | null>(null);
 const loading = ref(true);
-const generatingPdf = ref(false); // Estado para el botón de PDF
-
-// --- ESTADO EDICIÓN ---
 const editDialog = ref(false);
+const isEditMode = ref(false);
 const submitted = ref(false);
 
 const properties = ref<Property[]>([]);
+const categories = ref<Category[]>([]);
+const departments = ref<Department[]>([]);
+
 const filteredMembers = ref<any[]>([]);
 const selectedMemberObject = ref<Member | null>(null);
 const filteredProviders = ref<any[]>([]);
 const selectedProviderObject = ref<any>(null);
-const categoryOptions = ref(['Laptop', 'Desktop', 'Monitor', 'Printer', 'Server', 'Tablet', 'Access Point', 'Switch', 'Phone', 'Celular', 'Other']);
+const filterCategory = ref<number | null>(null);
+const filteredCategories = ref<Category[]>([]);
+const selectedCategoryObject = ref<Category | null>(null);
 
 const statusOptions = ref([
     { label: 'ACTIVO', value: 'active' },
@@ -57,7 +65,15 @@ const statusOptions = ref([
     { label: 'ALMACÉN', value: 'stored' }
 ]);
 
+const hasNetworkFields = computed(() => selectedCategoryObject.value?.has_network_fields || false);
 
+const addAccessory = () => {
+    form.value.accessories.push({ type: '', brand: '', serial_number: '' });
+};
+
+const removeAccessory = (index: number) => {
+    form.value.accessories.splice(index, 1);
+};
 
 // --- FORMULARIO ---
 const form = ref({
@@ -65,7 +81,11 @@ const form = ref({
     property_id: null as number | null,
     member_id: null as number | null,
     provider_id: null as number | null,
-    category: '',
+    category_id: null as number | null,
+    quantity: 1, // 
+    price: null as number | null,
+    accessories: [] as Array<{ id?: number, type: string, brand: string, serial_number: string }>,
+
     status: 'active',
     brand: '',
     model: '',
@@ -78,24 +98,20 @@ const form = ref({
     purchase_date: null as Date | null,
     warranty_expiry: null as Date | null,
 
-    specs: {
-        // Computo
-        ram: '',
-        storage: '',
-        processor: '',
-        // provider: '',
-        imei: '',
-        sim: '',
-        plan: '',
-        carrier: '',
-        phone_number: '',
-        description: ''
-    }
+    ram: '',
+    storage: '',
+    processor: '',
+    imei: '',
+    sim: '',
+    plan: '',
+    carrier: '',
+    phone_number: '',
+    description: ''
 });
 
 // Computed para saber si mostrar campos de celular en el formulario
 const isMobile = computed(() => {
-    const cat = form.value.category?.toLowerCase() || '';
+    const cat = selectedCategoryObject.value?.name?.toLowerCase() || '';
     return cat.includes('phone') || cat.includes('celular') || cat.includes('tablet') || cat.includes('ipad') || cat.includes('mobile');
 });
 
@@ -139,13 +155,15 @@ onMounted(async () => {
     loading.value = true;
     try {
         // Carga paralela de Asset, Propiedades y Miembros
-        const [assetRes, propsRes] = await Promise.all([
+        const [assetRes, propsRes, categoriesRes] = await Promise.all([
             assetService.getById(id),
             listProperties(),
+            listCategories(),
         ]);
 
         asset.value = assetRes;
         properties.value = propsRes;
+        categories.value = categoriesRes;
 
     } catch (error) {
         toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar la información', life: 3000 });
@@ -161,7 +179,7 @@ const loadAsset = async (id: number) => {
     } catch (e) { console.error(e) }
 }
 
-const searchMember = async (event: any) => {
+const searchMember = async (event: AutoCompleteCompleteEvent) => {
     const query = event.query.trim();
     if (!query) return;
 
@@ -173,7 +191,19 @@ const searchMember = async (event: any) => {
     }
 };
 
-const searchProvider = async (event: any) => {
+const searchCategory = async (event: AutoCompleteCompleteEvent) => {
+    const query = event.query.trim();
+    if (!query) return;
+
+    try {
+        const response = await categoryService.getAll(1, 20, query);
+        filteredCategories.value = response.data;
+    } catch (e) {
+        console.error("Error buscando categoría", e);
+    }
+};
+
+const searchProvider = async (event: AutoCompleteCompleteEvent) => {
     const query = event.query.trim();
     if (!query) return;
 
@@ -192,82 +222,106 @@ const searchProvider = async (event: any) => {
 const openEdit = async () => {
 
     if (!asset.value) return;
-    const a = asset.value;
 
-    if (a.assigned_to) {
+    if (asset.value.assigned_to) {
         selectedMemberObject.value = {
-            id: a.assigned_to.member_id,
-            name: a.assigned_to.name,
-            last_name: a.assigned_to.last_name,
-            full_name: a.assigned_to.full_name,
-            tm_id: a.assigned_to.tm_id,
+            id: asset.value.assigned_to.member_id,
+            name: asset.value.assigned_to.name,
+            last_name: asset.value.assigned_to.last_name,
+            full_name: asset.value.assigned_to.full_name,
+            tm_id: asset.value.assigned_to.tm_id,
             corporate_info: {
-                department: a.assigned_to.department,
-                position: a.assigned_to.position,
+                department: asset.value.assigned_to.department,
+                position: asset.value.assigned_to.position,
                 onq_id: ''
             },
-        } as unknown as Member;
+        } as any;
     } else {
         selectedMemberObject.value = null;
     }
 
-    if (a.provider) {
+    if (asset.value.category) {
+        selectedCategoryObject.value = {
+            id: asset.value.category.id,
+            name: asset.value.category.name,
+            prefix: asset.value.category.prefix,
+            icon: asset.value.category.icon
+        } as any;
+    } else {
+        selectedCategoryObject.value = null;
+    }
+
+    if (asset.value.provider) {
         selectedProviderObject.value = {
-            id: a.provider.provider_id,
-            name: a.provider.name,
-            tax_id: a.provider.tax_id,
-            email: a.provider.email,
-            phone: a.provider.phone,
-            contact_name: a.provider.contact_name
+            id: asset.value.provider.provider_id,
+            name: asset.value.provider.name,
+            tax_id: asset.value.provider.tax_id,
+            email: asset.value.provider.email,
+            phone: asset.value.provider.phone,
+            contact_name: asset.value.provider.contact_name
         } as any;
     } else {
         selectedProviderObject.value = null;
     }
 
     form.value = {
-        id: a.id,
-        property_id: a.location.property_id,
-        member_id: a.assigned_to?.member_id || null,
-        provider_id: a.provider?.provider_id || null,
-        category: a.info.category,
-        status: a.status,
-        brand: a.info.brand || '',
-        model: a.info.model || '',
-        serial_number: a.info.serial_number || '',
-        hilton_name: a.info.hilton_name || '',
-        mac_address: a.network.mac_address || '',
+        id: asset.value.id,
+        property_id: asset.value.location.property_id,
+        member_id: asset.value.assigned_to?.member_id || null,
+        provider_id: asset.value.provider?.provider_id || null,
+        category_id: asset.value.category.id,
+        quantity: 1,
+        accessories: asset.value.accessories ? JSON.parse(JSON.stringify(asset.value.accessories)) : [],
+        price: asset.value.price ? Number(asset.value.price) : null,
+        brand: asset.value.info.brand || '',
+        model: asset.value.info.model || '',
+        serial_number: asset.value.info.serial_number || '',
+        hilton_name: asset.value.info.hilton_name || '',
+        mac_address: asset.value.network.mac_address || '',
         ip_address: asset.value.network.ip_address || '',
+        status: asset.value.status,
 
-        purchase_date: a.dates.purchase ? new Date(a.dates.purchase) : null,
-        warranty_expiry: a.dates.warranty ? new Date(a.dates.warranty) : null,
+        purchase_date: asset.value.dates.purchase ? new Date(asset.value.dates.purchase) : null,
+        warranty_expiry: asset.value.dates.warranty ? new Date(asset.value.dates.warranty) : null,
 
-        specs: {
-            ram: a.specs?.ram || '',
-            storage: a.specs?.storage || '',
-            processor: a.specs?.processor || '',
-            // provider: a.specs?.provider || '',
-            imei: asset.value.specs?.imei || '',
-            sim: a.specs?.sim || '',
-            plan: a.specs?.plan || '',
-            carrier: a.specs?.carrier || '',
-            phone_number: a.specs?.phone_number || '',
-            description: a.specs?.description || ''
-        }
+        ram: asset.value.specs?.ram || '',
+        storage: asset.value.specs?.storage || '',
+        processor: asset.value.specs?.processor || '',
+        imei: asset.value.specs?.imei || '',
+        sim: asset.value.specs?.sim || '',
+        plan: asset.value.specs?.plan || '',
+        carrier: asset.value.specs?.carrier || '',
+        phone_number: asset.value.specs?.phone_number || '',
+        description: asset.value.specs?.description || ''
     };
     editDialog.value = true;
+    submitted.value = false;
+    isEditMode.value = true;
 };
 
 // 2. GUARDAR (Mapeo Form -> API)
 const saveAsset = async () => {
     submitted.value = true;
-    if (!form.value.category || !form.value.property_id || !form.value.status) return;
+    if (!selectedCategoryObject.value || !form.value.property_id || !form.value.status) {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'Faltan campos requeridos', life: 3000 });
+        return;
+    }
 
     const payload: CreateAssetPayload = {
         property_id: form.value.property_id,
+        category_id: selectedCategoryObject.value.id,
+        quantity: isEditMode.value ? 1 : form.value.quantity,
+
+        accessories_base: form.value.accessories.map(acc => ({
+            id: acc.id,
+            type: acc.type,
+            brand: acc.brand,
+            serial_number: isEditMode.value ? acc.serial_number : undefined
+        })),
+
+        price: form.value.price,
         member_id: selectedMemberObject.value ? selectedMemberObject.value.id : null,
         provider_id: selectedProviderObject.value ? selectedProviderObject.value.id : null,
-        category: form.value.category,
-        status: form.value.status,
 
         brand: form.value.brand?.trim() || null,
         model: form.value.model?.trim() || null,
@@ -275,27 +329,27 @@ const saveAsset = async () => {
         hilton_name: form.value.hilton_name?.trim() || null,
         mac_address: form.value.mac_address?.trim() || null,
         ip_address: form.value.ip_address?.trim() || null,
+        status: form.value.status,
 
         purchase_date: form.value.purchase_date ? form.value.purchase_date.toISOString().split('T')[0] : null,
         warranty_expiry: form.value.warranty_expiry ? form.value.warranty_expiry.toISOString().split('T')[0] : null,
 
         specs: {
-            ram: form.value.specs.ram,
-            storage: form.value.specs.storage,
-            processor: form.value.specs.processor,
-            // provider: form.value.specs.provider,
-
-            // CORRECCIÓN: Enviar datos móviles al backend
-            imei: form.value.specs.imei,
-            sim: form.value.specs.sim,
-            plan: form.value.specs.plan,
-            carrier: form.value.specs.carrier,
-            phone_number: form.value.specs.phone_number
+            ram: form.value.ram,
+            storage: form.value.storage,
+            processor: form.value.processor,
+            imei: form.value.imei,
+            sim: form.value.sim,
+            plan: form.value.plan,
+            carrier: form.value.carrier,
+            phone_number: form.value.phone_number,
+            description: form.value.description
         }
+
     };
 
     try {
-        if (asset.value) {
+        if (asset.value && isEditMode.value) {
             await assetStore.updateAsset(asset.value.id, payload);
             toast.add({ severity: 'success', summary: 'Actualizado', detail: 'Información guardada', life: 3000 });
             editDialog.value = false;
@@ -303,22 +357,6 @@ const saveAsset = async () => {
         }
     } catch (e) {
         toast.add({ severity: 'error', summary: 'Error', detail: 'Error al actualizar', life: 3000 });
-    }
-};
-
-// 3. GENERAR PDF
-const generatePdf = async () => {
-    if (!asset.value) return;
-    generatingPdf.value = true;
-    try {
-        toast.add({ severity: 'info', summary: 'Generando...', detail: 'Creando acta de entrega...', life: 2000 });
-        await assetService.downloadAssignmentPdf(asset.value.id);
-        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Descarga iniciada', life: 3000 });
-    } catch (e) {
-        console.error(e);
-        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo generar el PDF', life: 3000 });
-    } finally {
-        generatingPdf.value = false;
     }
 };
 
@@ -340,7 +378,7 @@ const reportFailure = () => {
             }
         }
     });
-};
+}
 
 const formatStatus = (status: string) => {
     const map: Record<string, string> = {
@@ -365,18 +403,6 @@ const formatDate = (dateString: string | null) => {
     return new Intl.DateTimeFormat('es-MX', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(date);
 };
 
-const getCategoryIcon = (category: string) => {
-    const cat = category?.toLowerCase() || '';
-    if (cat.includes('laptop')) return 'fa-solid fa-laptop';
-    if (cat.includes('desktop') || cat.includes('pc')) return 'fa-solid fa-desktop';
-    if (cat.includes('monitor') || cat.includes('screen')) return 'fa-solid fa-display';
-    if (cat.includes('tablet') || cat.includes('ipad')) return 'fa-solid fa-tablet-screen-button';
-    if (cat.includes('phone') || cat.includes('mobile')) return 'fa-solid fa-mobile-screen';
-    if (cat.includes('server')) return 'fa-solid fa-server';
-    if (cat.includes('switch')) return 'fa-solid fa-network-wired';
-    if (cat.includes('printer')) return 'fa-solid fa-print';
-    return 'fa-solid fa-box-open';
-};
 
 const copyToClipboard = (text: string | null) => {
     if (!text) return;
@@ -393,8 +419,6 @@ const copyToClipboard = (text: string | null) => {
                 @click="router.push({ name: 'AssetList' })" class="text-gray-600 hover:text-blue-600" />
 
             <div v-if="asset" class="flex gap-2">
-                <Button v-if="asset.assigned_to" label="Acta Entrega" icon="pi pi-file-pdf" severity="danger" outlined
-                    @click="generatePdf" :loading="generatingPdf" />
 
                 <Button label="Editar" icon="pi pi-pencil" severity="info" outlined @click="openEdit" />
                 <Button label="Reportar Falla" icon="pi pi-exclamation-triangle" severity="warning" outlined
@@ -402,43 +426,69 @@ const copyToClipboard = (text: string | null) => {
             </div>
         </div>
 
-        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Skeleton height="200px" class="md:col-span-2 rounded-xl" />
-            <Skeleton height="200px" class="rounded-xl" />
+        <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+            <Skeleton v-for="i in 6" :key="i" height="300px" class="rounded-xl" />
         </div>
 
         <div v-else-if="asset" class="animate-fade-in space-y-6">
 
             <div
-                class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row gap-6 items-start justify-between">
-                <div class="flex items-center gap-5">
+                class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
+
+                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-5">
                     <div
-                        class="w-24 h-24 rounded-2xl bg-blue-50 text-blue-900 flex items-center justify-center shadow-inner">
-                        <i :class="getCategoryIcon(asset.info.category)" class="text-4xl drop-shadow-sm"></i>
+                        class="w-20 h-20 rounded-2xl  from-blue-200 to-indigo-300 border border-blue-200 text-blue-800 flex items-center justify-center shrink-0">
+                        <i :class="(asset.category?.icon || 'pi pi-desktop')" class="text-4xl"></i>
                     </div>
+
                     <div>
                         <div class="flex items-center gap-3 mb-1">
-                            <h1 class="text-2xl font-bold text-gray-800">{{ asset.info.category }}</h1>
+                            <h1 class="text-2xl font-bold text-gray-900">{{ asset.category?.name || 'Equipo' }}</h1>
                             <Tag :value="formatStatus(asset.status)" :severity="getSeverity(asset.status)"
-                                class="px-3 py-1 font-bold" />
+                                class="px-2 py-0.5 text-xs font-bold uppercase tracking-wider" />
                         </div>
-                        <p class="text-gray-500 text-lg">{{ asset.info.brand }} {{ asset.info.model }}</p>
-                        <div class="flex gap-4 mt-3 text-sm font-mono text-gray-600">
-                            <span class="bg-gray-100 px-2 py-1 rounded cursor-pointer hover:bg-gray-200"
-                                @click="copyToClipboard(asset.info.serial_number)">
-                                SN: {{ asset.info.serial_number || 'N/A' }} <i class="pi pi-copy text-xs ml-1"></i>
+
+                        <p class="text-gray-600 font-medium text-lg flex items-center gap-2">
+                            {{ asset.info.brand || 'Genérico' }}
+                            <span class="text-gray-300">|</span>
+                            {{ asset.info.model || 'Sin Modelo' }}
+                        </p>
+
+                        <div class="flex flex-wrap gap-2 mt-3">
+                            <span
+                                class="inline-flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-2.5 py-1 rounded-md text-sm font-mono text-gray-700 cursor-pointer transition-colors"
+                                @click="copyToClipboard(asset.info.serial_number)" v-tooltip.bottom="'Copiar Serial'">
+                                <span class="text-gray-400 select-none">SN:</span> {{ asset.info.serial_number || 'N/A'
+                                }}
+                                <i class="pi pi-copy text-[10px] text-gray-400"></i>
                             </span>
-                            <span class="bg-gray-100 px-2 py-1 rounded cursor-pointer hover:bg-gray-200"
-                                @click="copyToClipboard(asset.info.hilton_name)">
-                                HN: {{ asset.info.hilton_name || 'N/A' }} <i class="pi pi-copy text-xs ml-1"></i>
+
+                            <span v-if="asset.info.hilton_name"
+                                class="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-2.5 py-1 rounded-md text-sm font-mono text-indigo-700 cursor-pointer transition-colors"
+                                @click="copyToClipboard(asset.info.hilton_name)"
+                                v-tooltip.bottom="'Copiar Hilton Name'">
+                                <span class="text-indigo-300 select-none">HN:</span> {{ asset.info.hilton_name }}
+                                <i class="pi pi-copy text-[10px] text-indigo-400"></i>
                             </span>
                         </div>
                     </div>
                 </div>
-                <div class="text-gray-500  text-normal md:text-right">
-                    Registrado el {{ formatDate(asset.created_at) }}
-                </div>
 
+                <div class="flex flex-col items-end gap-4 w-full lg:w-auto">
+
+                    <div class="flex flex-col items-end text-base gap-1">
+                        <span class="text-gray-500">
+                            Registrado: <span class="font-medium text-gray-700">{{ formatDate(asset.created_at)
+                                }}</span>
+                        </span>
+                        <span
+                            class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded mt-1 border border-emerald-100">
+                            Precio: {{ asset.price ? `$${asset.price.toLocaleString('en-US', {
+                                minimumFractionDigits: 2
+                            })}` : 'Sin costo reg.' }}
+                        </span>
+                    </div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -474,13 +524,13 @@ const copyToClipboard = (text: string | null) => {
 
                                 <div class="flex-1 space-y-3 mb-4">
 
-                                    <div class="flex items-start gap-3 bg-gray-50 p-2 rounded-md">
+                                    <div class="flex items-start gap-3  p-2 rounded-md">
                                         <i class="pi pi-id-card text-indigo-500 mt-1"></i>
                                         <div>
                                             <span
                                                 class="block text-[10px] text-gray-400 uppercase font-bold tracking-wider">Team
                                                 Member ID</span>
-                                            <span class="text-sm text-gray-800 font-mono font-medium">
+                                            <span class="text-base text-gray-600 font-medium">
                                                 {{ asset.assigned_to.tm_id || 'N/A' }}
                                             </span>
                                         </div>
@@ -541,7 +591,8 @@ const copyToClipboard = (text: string | null) => {
                                     <div class="flex items-start gap-3">
                                         <i class="pi pi-envelope text-gray-400 mt-1"></i>
                                         <div class="overflow-hidden">
-                                            <span class="text-sm text-gray-600 ">
+                                            <span class="block text-xs text-gray-400">Correo Electrónico</span>
+                                            <span class="text-sm font-medium text-gray-600 ">
                                                 <a v-if="asset.provider.email" :href="`mailto:${asset.provider.email}`"
                                                     class="hover:text-blue-600 hover:underline">
                                                     {{ asset.provider.email }}
@@ -554,6 +605,7 @@ const copyToClipboard = (text: string | null) => {
                                     <div class="flex items-start gap-3">
                                         <i class="pi pi-phone text-gray-400 mt-1"></i>
                                         <div>
+                                            <span class="block text-xs text-gray-400">Teléfono</span>
                                             <span class="text-sm text-gray-600">
                                                 {{ asset.provider.phone || 'Sin teléfono' }}
                                             </span>
@@ -581,6 +633,33 @@ const copyToClipboard = (text: string | null) => {
                         </template>
                     </Card>
 
+                    <Card class="shadow-sm border border-gray-100">
+                        <template #title>
+                            <div class="flex items-center gap-2 text-lg text-gray-800"><i
+                                    class="pi pi-truck text-orange-600"></i> Ciclo de Vida</div>
+                        </template>
+                        <template #content>
+                            <div class="flex-1 p-3 bg-green-50 rounded-lg border border-green-100">
+                                <span class="block text-xs text-green-700 font-semibold uppercase mb-1">Fecha de
+                                    Compra</span>
+                                <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.purchase)
+                                    }}</span>
+                            </div>
+                            <div class="flex-1 p-3 bg-red-50 rounded-lg border border-red-100">
+                                <span class="block text-xs text-red-700 font-semibold uppercase mb-1">Fin de
+                                    Garantía</span>
+                                <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.warranty)
+                                    }}</span>
+                            </div>
+                            <div class="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                <span class="block text-xs text-gray-500 font-semibold uppercase mb-1">Registro</span>
+                                <span class="text-sm text-gray-600 font-medium">{{ formatDate(asset.created_at)
+                                    }}</span>
+                            </div>
+                        </template>
+                    </Card>
+
+
                 </div>
 
                 <div class="lg:col-span-2 space-y-6">
@@ -593,7 +672,7 @@ const copyToClipboard = (text: string | null) => {
 
                                 <div class="overflow-hidden">
                                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-0.5"">
-                                        <i class="pi pi-building text-lg mr-2 text-blue-600"></i> Propiedad
+                                        <i class=" pi pi-building text-lg mr-2 text-blue-600"></i> Propiedad
                                     </span>
                                     <div class="font-semibold text-gray-800 text-base truncate"
                                         :title="asset.location.property_name">
@@ -607,9 +686,9 @@ const copyToClipboard = (text: string | null) => {
 
                             <div class="p-3 shadow rounded-lg bg-white flex justify-between items-center group">
                                 <div class="overflow-hidden">
-                                   
+
                                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-0.5"">
-                                        <i class="pi pi-sitemap text-lg mr-2 text-blue-600"></i> Departamento
+                                        <i class=" pi pi-sitemap text-lg mr-2 text-blue-600"></i> Departamento
                                     </span>
 
                                     <div class="font-semibold text-base truncate"
@@ -649,7 +728,55 @@ const copyToClipboard = (text: string | null) => {
                         </div>
                     </Panel>
 
-                    <Panel header="Especificaciones Técnicas" toggleable>
+                    <Panel header="Accesorios Relacionados" toggleable>
+                        <div class="p-4 border border-gray-200 rounded-lg bg-gray-50/50">
+
+                            <div v-if="asset.accessories && asset.accessories.length > 0"
+                                class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                <div v-for="(acc, index) in asset.accessories" :key="index"
+                                    class="flex items-start gap-4 p-4 rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+
+                                    <div
+                                        class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
+                                        <i class="pi pi-box text-slate-500 text-xl"></i>
+                                    </div>
+
+                                    <div class="flex flex-col w-full overflow-hidden">
+                                        <span class="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">{{
+                                            acc.type
+                                            }}</span>
+
+                                        <div class="flex items-center justify-between gap-2 mb-1">
+                                            <span class="text-sm font-semibold text-gray-800 truncate"
+                                                :title="acc.brand || undefined">
+                                                {{ acc.brand || 'Marca Genérica' }}
+                                            </span>
+                                        </div>
+
+                                        <div
+                                            class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-gray-50 p-1.5 rounded w-fit">
+                                            <i class="pi pi-hashtag text-[10px]"></i>
+                                            <span class="truncate" :title="acc.serial_number || undefined">{{
+                                                acc.serial_number || 'Sin S/N' }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-else class="text-center py-8">
+                                <div
+                                    class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-3">
+                                    <i class="pi pi-inbox text-2xl text-gray-400"></i>
+                                </div>
+                                <h3 class="text-gray-600 font-medium text-base">Sin accesorios adicionales</h3>
+                                <p class="text-gray-400 text-sm mt-1">Este equipo no cuenta con periféricos registrados.
+                                </p>
+                            </div>
+                        </div>
+                    </Panel>
+
+
+                    <Panel header="Especificaciones Hardware" toggleable>
                         <div v-if="formattedSpecs.length > 0" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div v-for="spec in formattedSpecs" :key="spec.key"
                                 class="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:shadow-sm transition-shadow bg-white">
@@ -673,192 +800,298 @@ const copyToClipboard = (text: string | null) => {
                         </div>
                     </Panel>
 
-                    <Panel header="Ciclo de Vida" toggleable>
-                        <div class="flex flex-col md:flex-row gap-4 justify-between">
-                            <div class="flex-1 p-3 bg-green-50 rounded-lg border border-green-100">
-                                <span class="block text-xs text-green-700 font-semibold uppercase mb-1">Fecha de
-                                    Compra</span>
-                                <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.purchase)
-                                }}</span>
-                            </div>
-                            <div class="flex-1 p-3 bg-red-50 rounded-lg border border-red-100">
-                                <span class="block text-xs text-red-700 font-semibold uppercase mb-1">Fin de
-                                    Garantía</span>
-                                <span class="text-sm text-gray-800 font-medium">{{ formatDate(asset.dates.warranty)
-                                }}</span>
-                            </div>
-                            <div class="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                <span class="block text-xs text-gray-500 font-semibold uppercase mb-1">Registro</span>
-                                <span class="text-sm text-gray-600 font-medium">{{ formatDate(asset.created_at)
-                                }}</span>
-                            </div>
-                        </div>
-                    </Panel>
+
                 </div>
             </div>
         </div>
 
-        <Dialog v-model:visible="editDialog" header="Editar Activo" modal class="w-full max-w-5xl">
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-2">
+        <Dialog v-model:visible="editDialog" header="Editar Especificaciones del Activo" modal class="w-full max-w-6xl"
+            :draggable="false" :breakpoints="{ '1199px': '75vw', '575px': '95vw' }">
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 font-bold text-gray-600">Información General
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 p-2">
+
+                <div class="col-span-1 lg:col-span-7 flex flex-col gap-6">
+
+                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <div class="border-b pb-2 mb-4 font-bold text-gray-700 flex items-center gap-2">
+                            <i class="pi pi-box text-blue-600"></i> Identificación del Equipo
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Propiedad <span
+                                        class="text-red-500">*</span></label>
+                                <Select v-model="form.property_id" :options="properties" optionLabel="name"
+                                    optionValue="id" class="w-full" filter placeholder="Seleccione la propiedad..." />
+                            </div>
+
+                            <div class="sm:col-span-2">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Categoría <span
+                                        class="text-red-500">*</span></label>
+                                <AutoComplete v-model="selectedCategoryObject" :suggestions="filteredCategories"
+                                    optionLabel="name" placeholder="Buscar categoría..." class="w-full"
+                                    @complete="searchCategory" :dropdown="true" showClear forceSelection>
+                                    <template #option="slotProps">
+                                        <div class="flex items-center gap-3">
+                                            <i :class="slotProps.option.icon" class="text-gray-500"></i>
+                                            <span class="font-bold text-gray-800">{{ slotProps.option.name }}</span>
+                                        </div>
+                                    </template>
+                                </AutoComplete>
+                            </div>
+
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Marca</label>
+                                <InputText v-model.trim="form.brand" class="w-full" placeholder="Ej. Dell, HP..."
+                                    maxlength="50" />
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Modelo</label>
+                                <InputText v-model.trim="form.model" class="w-full" placeholder="Ej. Latitude 5420"
+                                    maxlength="100" />
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Número de Serie</label>
+                                <InputText v-model.trim="form.serial_number" class="w-full font-mono uppercase"
+                                    placeholder="S/N" maxlength="100" />
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Hilton Name</label>
+                                <InputText v-model.trim="form.hilton_name" class="w-full font-mono uppercase"
+                                    placeholder="Ej. CUNQR-LT-01" maxlength="100" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <div class="border-b pb-2 mb-4 font-bold text-gray-700 flex items-center gap-2">
+                            <i class="pi pi-shopping-cart text-green-600"></i> Compras y Logística
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Proveedor Autorizado</label>
+                                <AutoComplete v-model="selectedProviderObject" :suggestions="filteredProviders"
+                                    optionLabel="name" placeholder="Buscar por Proveedor..." class="w-full"
+                                    @complete="searchProvider" :dropdown="true" showClear forceSelection>
+                                    <template #option="slotProps">
+                                        <div class="flex flex-col">
+                                            <span class="font-bold text-gray-800">{{ slotProps.option.name }}</span>
+                                            <span v-if="slotProps.option.tax_id"
+                                                class="text-xs text-gray-500 mt-1 bg-gray-200 px-2 py-0.5 rounded w-fit">
+                                                {{ slotProps.option.tax_id }}
+                                            </span>
+                                        </div>
+                                    </template>
+                                </AutoComplete>
+                            </div>
+
+                            <div class="sm:col-span-2 flex flex-col">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Precio Unitario ($)</label>
+
+                                <InputNumber v-model="form.price" class="w-full" input-class="w-full p-2"
+                                    mode="currency" currency="USD" locale="en-US" :min="0" :max="999999" />
+                            </div>
+
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Fecha Compra</label>
+                                <Calendar v-model="form.purchase_date" showIcon class="w-full" dateFormat="dd/mm/yy"
+                                    :maxDate="new Date()" />
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Vencimiento Garantía</label>
+                                <Calendar v-model="form.warranty_expiry" showIcon class="w-full"
+                                    dateFormat="dd/mm/yy" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <div class="border-b pb-2 mb-4 font-bold text-gray-700 flex items-center gap-2">
+                            <i class="pi pi-users text-pink-500"></i> Asignación y Estatus
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Estado Operativo <span
+                                        class="text-red-500">*</span></label>
+                                <Select v-model="form.status" :options="statusOptions" optionLabel="label"
+                                    optionValue="value" class="w-full" />
+                            </div>
+
+                            <div class="sm:col-span-2">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Asignado a
+                                    (Colaborador)</label>
+                                <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers"
+                                    optionLabel="full_name" placeholder="Dejar vacío para mantener en Stock..."
+                                    class="w-full" @complete="searchMember" :dropdown="true" showClear forceSelection>
+                                    <template #option="slotProps">
+                                        <div class="flex flex-col">
+                                            <span class="font-bold text-gray-800">{{ slotProps.option.full_name
+                                            }}</span>
+                                            <span class="text-xs text-gray-500">
+                                                <i class="pi pi-id-card text-[10px]"></i> {{ slotProps.option.tm_id ||
+                                                    'Sin ID' }} | {{ slotProps.option.corporate_info?.department }}
+                                            </span>
+                                        </div>
+                                    </template>
+                                </AutoComplete>
+                            </div>
+
+                            <div class="sm:col-span-2">
+                                <label class="text-sm font-medium text-gray-700 block mb-1">Descripción
+                                    Adicional</label>
+                                <Textarea v-model.trim="form.description" rows="2" class="w-full resize-none"
+                                    placeholder="Observaciones del equipo..." maxlength="500" />
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div><label class="text-sm block mb-1">Propiedad *</label>
-                    <Select v-model="form.property_id" :options="properties" optionLabel="name" optionValue="id"
-                        class="w-full" filter />
-                </div>
-                <div><label class="text-sm block mb-1">Categoría *</label>
-                    <Select v-model="form.category" :options="categoryOptions" editable class="w-full"
-                        placeholder="Selecciona o escribe" />
-                </div>
-                <div><label class="text-sm block mb-1">Marca</label>
-                    <InputText v-model="form.brand" class="w-full" />
-                </div>
-                <div><label class="text-sm block mb-1">Modelo</label>
-                    <InputText v-model="form.model" class="w-full" />
-                </div>
-                <div><label class="text-sm block mb-1">Serial Number</label>
-                    <InputText v-model="form.serial_number" class="w-full font-mono" />
-                </div>
-                <div><label class="text-sm block mb-1">Hilton Name</label>
-                    <InputText v-model="form.hilton_name" class="w-full" />
-                </div>
-                <div>
-                    <label class="text-sm block mb-1 font-bold">Proveedor</label>
-                    <AutoComplete v-model="selectedProviderObject" :suggestions="filteredProviders" optionLabel="name"
-                        placeholder="Buscar por Proveedor" class="w-full" @complete="searchProvider" :dropdown="true"
-                        showClear forceSelection>
-                        <template #option="slotProps">
-                            <div class="flex flex-col">
-                                <span class="font-bold text-gray-800">{{ slotProps.option.name }}</span>
-                                <div class="flex items-center gap-2 text-xs text-gray-500">
-                                    <span v-if="slotProps.option.tax_id" class="bg-gray-100 px-1 rounded">{{
-                                        slotProps.option.tax_id }}</span>
+                <div class="col-span-1 lg:col-span-5 flex flex-col gap-4">
+
+                    <div v-if="!selectedCategoryObject"
+                        class="h-full flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-center">
+                        <i class="pi pi-server text-5xl mb-4 text-gray-300"></i>
+                        <h3 class="text-lg font-bold text-gray-600">Configuración Dinámica</h3>
+                        <p class="text-sm mt-2">Selecciona una categoría a la izquierda para habilitar las opciones de
+                            red y
+                            hardware.</p>
+                    </div>
+
+                    <template v-else>
+                        <div v-if="hasNetworkFields"
+                            class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm">
+                            <div
+                                class="border-b border-indigo-100 pb-2 mb-3 font-bold text-indigo-800 flex items-center gap-2">
+                                <i class="pi pi-wifi"></i> Conectividad de Red
+                            </div>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-xs font-bold text-indigo-600 block mb-1">MAC Address</label>
+                                    <InputText v-model.trim="form.mac_address"
+                                        class="w-full font-mono uppercase text-sm" placeholder="00:1B:44:11:3A:B7"
+                                        maxlength="17" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-indigo-600 block mb-1">IP Address</label>
+                                    <InputText v-model.trim="form.ip_address" class="w-full font-mono text-sm"
+                                        placeholder="192.168.x.x" maxlength="15" />
                                 </div>
                             </div>
-                        </template>
-                        <template #empty>
-                            <div class="p-2 text-sm text-gray-500">No se encontraron resultados.</div>
-                        </template>
-                    </AutoComplete>
-                    <small class="text-gray-400 text-xs">Sin proveedor asignado.</small>
-                </div>
+                        </div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Estado y
-                    Asignación</div>
-
-                <div>
-                    <label class="text-sm block mb-1">Estado *</label>
-                    <Select v-model="form.status" :options="statusOptions" optionLabel="label" optionValue="value"
-                        class="w-full" />
-                </div>
-
-                <div>
-                    <label class="text-sm block mb-1 font-bold">Asignado a (Miembro)</label>
-
-                    <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="name"
-                        placeholder="Buscar por Nombre o TM ID..." class="w-full" @complete="searchMember"
-                        :dropdown="true" showClear forceSelection>
-                        <template #option="slotProps">
-                            <div class="flex flex-col">
-                                <span class="font-bold text-gray-800">{{ slotProps.option.full_name }}</span>
-                                <div class="flex items-center gap-2 text-xs text-gray-500">
-                                    <span v-if="slotProps.option.tm_id" class="bg-gray-100 px-1 rounded text-gray-600">
-                                        {{ slotProps.option.tm_id }}
-                                    </span>
-                                    <span>{{ slotProps.option.corporate_info?.department || 'Sin Depto' }}</span>
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <div
+                                class="border-b border-gray-100 pb-2 mb-3 font-bold text-gray-700 flex items-center gap-2">
+                                <i class="pi pi-microchip text-purple-500"></i> Hardware y Especificaciones
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div class="col-span-2">
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">Procesador</label>
+                                    <InputText v-model.trim="form.processor" class="w-full p-2" maxlength="50" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">RAM</label>
+                                    <InputText v-model.trim="form.ram" class="w-full p-2" maxlength="30" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">Disco / Storage</label>
+                                    <InputText v-model.trim="form.storage" class="w-full p-2" maxlength="50" />
                                 </div>
                             </div>
-                        </template>
+                        </div>
 
-                        <template #empty>
-                            <div class="p-2 text-gray-500 text-sm">No se encontraron miembros.</div>
-                        </template>
-                    </AutoComplete>
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <div
+                                class="border-b border-gray-100 pb-2 mb-3 font-bold text-gray-700 flex items-center gap-2">
+                                <i class="pi pi-mobile text-teal-500"></i> Datos Celulares (Si Aplica)
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div class="col-span-2">
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">IMEI</label>
+                                    <InputText v-model.trim="form.imei" class="w-full p-2 font-mono uppercase"
+                                        maxlength="20" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">Número Tel.</label>
+                                    <InputText v-model.trim="form.phone_number" class="w-full p-2 font-mono"
+                                        maxlength="20" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">SIM ID</label>
+                                    <InputText v-model.trim="form.sim" class="w-full p-2" maxlength="30" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">Carrier</label>
+                                    <InputText v-model.trim="form.carrier" class="w-full p-2" maxlength="30" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-600 block mb-1">Plan Tarifario</label>
+                                    <InputText v-model.trim="form.plan" class="w-full p-2" maxlength="100" />
+                                </div>
+                            </div>
+                        </div>
 
-                    <small class="text-gray-400 text-xs mt-1 block">
-                        Dejar vacío para enviar a Stock/Almacén.
-                    </small>
-                </div>
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1">
+                            <div
+                                class="border-b border-gray-100 pb-2 mb-3 font-bold text-gray-700 flex justify-between items-center">
+                                <div class="flex items-center gap-2"><i class="pi pi-plug text-orange-500"></i>
+                                    Accesorios</div>
+                                <Button label="Añadir" icon="pi pi-plus" size="small" outlined severity="secondary"
+                                    @click="addAccessory" class="py-1 px-2 text-xs" />
+                            </div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Red</div>
+                            <div v-if="form.accessories.length === 0"
+                                class="text-sm text-gray-400 italic text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                Sin accesorios vinculados a este equipo.
+                            </div>
 
-                <div><label class="text-sm block mb-1">MAC Address</label>
-                    <InputText v-model="form.mac_address" class="w-full font-mono" placeholder="AA:BB:CC..." />
-                </div>
-                <div><label class="text-sm block mb-1">IP Address</label>
-                    <InputText v-model="form.ip_address" class="w-full font-mono" placeholder="192.168..." />
-                </div>
+                            <div class="space-y-3 max-h-64 overflow-y-auto pr-1">
+                                <div v-for="(acc, index) in form.accessories" :key="index"
+                                    class="grid grid-cols-12 gap-2 items-end bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    <div class="col-span-12 sm:col-span-4">
+                                        <label
+                                            class="text-[10px] font-bold text-gray-500 block mb-1 uppercase tracking-wider">Tipo
+                                            *</label>
+                                        <InputText v-model.trim="acc.type" class="w-full text-sm p-1.5"
+                                            placeholder="Mouse..." maxlength="50" />
+                                    </div>
+                                    <div class="col-span-12 sm:col-span-3">
+                                        <label
+                                            class="text-[10px] font-bold text-gray-500 block mb-1 uppercase tracking-wider">Marca</label>
+                                        <InputText v-model.trim="acc.brand" class="w-full text-sm p-1.5"
+                                            maxlength="50" />
+                                    </div>
+                                    <div class="col-span-10 sm:col-span-4">
+                                        <label
+                                            class="text-[10px] font-bold text-gray-500 block mb-1 uppercase tracking-wider">S/N</label>
+                                        <InputText v-model.trim="acc.serial_number"
+                                            class="w-full text-sm p-1.5 font-mono uppercase" maxlength="100" />
+                                    </div>
+                                    <div class="col-span-2 sm:col-span-1 flex justify-center pb-1">
+                                        <Button icon="pi pi-trash" severity="danger" text rounded
+                                            @click="removeAccessory(index)" class="w-8 h-8" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">Especificaciones y
-                    Fechas
-                </div>
-
-                <div class="grid grid-cols-3 gap-2 col-span-2">
-                    <div><label class="text-sm block mb-1">RAM</label>
-                        <InputText v-model="form.specs.ram" class="w-full" />
-                    </div>
-                    <div><label class="text-sm block mb-1">Almacenamiento</label>
-                        <InputText v-model="form.specs.storage" class="w-full" />
-                    </div>
-                    <div><label class="text-sm block mb-1">Procesador</label>
-                        <InputText v-model="form.specs.processor" class="w-full" />
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-2 col-span-2">
-                    <!-- <div><label class="text-sm block mb-1">Proveedor</label>
-                        <InputText v-model="form.specs.provider" class="w-full" />
-                    </div> -->
-                    <div><label class="text-sm block mb-1">Fecha Compra</label>
-                        <Calendar v-model="form.purchase_date" showIcon class="w-full" />
-                    </div>
-                    <div><label class="text-sm block mb-1">Fin Garantía</label>
-                        <Calendar v-model="form.warranty_expiry" showIcon class="w-full" />
-                    </div>
-                </div>
-
-                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4 font-bold text-gray-600">
-                    Móvil / Detalles Adicionales
-                </div>
-
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 col-span-2">
-                    <div>
-                        <label class="text-sm block mb-1">IMEI</label>
-                        <InputText v-model="form.specs.imei" class="w-full font-mono" placeholder="Solo Móviles" />
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">Número Tel.</label>
-                        <InputText v-model="form.specs.phone_number" class="w-full" placeholder="+52..." />
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">SIM Card ID</label>
-                        <InputText v-model="form.specs.sim" class="w-full" />
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">Carrier (Telcel/AT&T)</label>
-                        <InputText v-model="form.specs.carrier" class="w-full" />
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">Plan</label>
-                        <InputText v-model="form.specs.plan" class="w-full" placeholder="Plan Empresarial..." />
-                    </div>
-                </div>
-
-                <div class="col-span-1 md:col-span-2 mt-2">
-                    <label class="text-sm block mb-1">Descripción / Notas</label>
-                    <Textarea v-model="form.specs.description" rows="3" class="w-full"
-                        placeholder="Detalles adicionales del activo..." />
+                    </template>
                 </div>
             </div>
 
             <template #footer>
-                <Button label="Cancelar" text icon="pi pi-times" @click="editDialog = false" />
-                <Button label="Guardar" icon="pi pi-check" @click="saveAsset" />
+                <div class="flex justify-end gap-3 pt-4 -mx-4 -mb-4 px-6 pb-4 rounded-b-lg">
+                    <Button label="Cancelar" icon="pi pi-times" severity="secondary" text @click="editDialog = false" />
+                    <Button label="Guardar Cambios" icon="pi pi-check" @click="saveAsset"
+                        :loading="assetStore.isLoading" class="px-6" />
+                </div>
             </template>
         </Dialog>
+
+
 
         <ConfirmDialog />
     </div>

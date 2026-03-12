@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useMemberStore } from '../store/member.store';
 import { memberService } from '../services/member.service';
 import type { Member, CreateMemberPayload } from '../types/member.types';
-import { ORGANIZATION_CHART, DEPARTMENTS_LIST } from '@/data/organization.data';
-import { listProperties, type Property } from '@/modules/properties/services/property.service';
 
-// PDF Y EXCEL export
+import { listProperties, type Property } from '@/modules/properties/services/property.service';
+import { useDepartmentStore } from '@/modules/department/store/department.store';
+import { departmentService, listDepartments, type Department } from '@/modules/department/services/department.service';
+import { positionService } from '@/modules/position/services/position.service';
+import type { Position } from '@/modules/position/types/position.types';
+
+// // PDF Y EXCEL export
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,10 +32,23 @@ import InputIcon from 'primevue/inputicon';
 import IconField from 'primevue/iconfield';
 import SelectButton from 'primevue/selectbutton';
 import type { DataTablePageEvent } from 'primevue/datatable';
+import type { AutoCompleteCompleteEvent } from 'primevue/autocomplete';
+import AutoComplete from 'primevue/autocomplete';
+
+
 
 const router = useRouter();
 const memberStore = useMemberStore();
+const departmentStore = useDepartmentStore();
 const toast = useToast();
+
+// --- ESTADOS PARA AUTOCOMPLETE ---
+
+const selectedMemberObject = ref<Member | null>(null);
+const filteredMembers = ref<Member[]>([]);
+
+const selectedDepartmentObject = ref<any | null>(null);
+const filteredDepartments = ref<any[]>([]);
 
 // --- ESTADOS DE UI ---
 const memberDialog = ref(false);
@@ -40,13 +57,15 @@ const submitted = ref(false);
 const isEditMode = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
-// --- VISTA: DIRECTORIO vs BAJAS ---
-const viewModeOptions = ref(['Directorio', 'Bajas']);
-const viewMode = ref('Directorio');
+// --- VISTAS ---
+const viewModeOptions = ref(['Pendientes IT', 'Activos', 'Bajas', 'Terminados']);
+const viewMode = ref('Activos');
 
 // --- DATOS ---
 const properties = ref<Property[]>([]);
-const statusOptions = ref(['ACTIVO', 'BAJA', 'TERMINADO']);
+const availablePositions = ref<Position[]>([]); // Puestos dinámicos desde API
+// Nuevos estados del ciclo de vida
+const statusOptions = ref(['PENDIENTE_IT', 'ACTIVO', 'BAJA', 'TERMINADO']);
 const selectedMemberToDelete = ref<Member | null>(null);
 
 // --- FILTROS ---
@@ -68,22 +87,23 @@ const form = ref({
     // Nombres
     name: '',
     last_name: '',
-
     email: '',
 
     // Datos Corporativos 
-    position: '',
-    department: '',
+    department_id: null as number | null, // Solo para UI, filtrar puestos
+    position_id: null as number | null,   // Lo que se guarda realmente
+
     onq_id: '',
-
-    status: 'ACTIVO',
-
+    // status: 'PENDING_IT', // Default inicial
+    status: 'ACTIVO', // Default inicial
     // Detalles
     phone: '',
     notes: '',
 
-    hire_date: null as Date | null,
-    termination_date: null as Date | null
+    hire_date: null as Date | null,       // RH Inicio
+    termination_date: null as Date | null,// RH Fin
+    admission_date: null as Date | null,  // IT Inicio (Nuevo)
+    hire_end_date: null as Date | null    // IT Fin (Nuevo)
 });
 
 // Paginación Server-Side
@@ -94,17 +114,22 @@ const lazyParams = ref({
 });
 
 // --- LÓGICA DE PUESTOS DEPENDIENTES ---
-
-const availablePositions = computed(() => {
-    const selectedDept = form.value.department;
-    if (!selectedDept || !ORGANIZATION_CHART[selectedDept]) {
-        return [];
+watch(() => form.value.department_id, async (newDeptId) => {
+    if (newDeptId) {
+        try {
+            availablePositions.value = await positionService.getListForSelect(newDeptId);
+        } catch (error) {
+            console.error("Error cargando puestos", error);
+            availablePositions.value = [];
+        }
+    } else {
+        availablePositions.value = [];
     }
-    return ORGANIZATION_CHART[selectedDept].sort();
 });
 
+// Resetear puesto si cambian depto manualmente
 const onDepartmentChange = () => {
-    form.value.position = '';
+    form.value.position_id = null;
 };
 
 // --- CICLO DE VIDA ---
@@ -112,6 +137,7 @@ onMounted(async () => {
     try {
         await Promise.all([
             properties.value = await listProperties(),
+            departmentStore.fetchDepartments(1, 100), // Cargar Deptos para el select
             memberStore.fetchStats(),
         ]);
         filterStatus.value = 'ACTIVO';
@@ -124,15 +150,6 @@ onMounted(async () => {
 // --- LÓGICA DE CARGA DE DATOS ---
 const loadLazyData = () => {
     const page = lazyParams.value.page + 1;
-
-    let statusToSend = filterStatus.value;
-
-    if (viewMode.value === 'Bajas') {
-        statusToSend = 'BAJA';
-    } else if (!statusToSend) {
-        // Si no hay filtro específico en modo Directorio, excluimos Bajas (o mostramos solo Activos)
-        statusToSend = 'ACTIVO';
-    }
 
     memberStore.fetchMembers(
         page,
@@ -149,7 +166,7 @@ const onPage = (event: DataTablePageEvent) => {
     loadLazyData();
 };
 
-// --- CAMBIO DE MODO (Activos <-> Bajas) ---
+// --- CAMBIO DE MODO
 const toggleViewMode = () => {
     lazyParams.value.first = 0;
     lazyParams.value.page = 0;
@@ -157,13 +174,83 @@ const toggleViewMode = () => {
     searchValue.value = '';
     filterDepartment.value = '';
 
-    if (viewMode.value === 'Bajas') {
-        filterStatus.value = 'BAJA';
-    } else {
-        filterStatus.value = 'ACTIVO';
+    switch (viewMode.value) {
+        case 'Pendientes IT':
+            filterStatus.value = 'PENDIENTE_IT';
+            break;
+        case 'Activos':
+            filterStatus.value = 'ACTIVO';
+            break;
+        case 'Bajas':
+            filterStatus.value = 'BAJA';
+            break;
+        case 'Terminados':
+            filterStatus.value = 'TERMINADO';
+            break;
+        default:
+            filterStatus.value = 'ACTIVO';
     }
+
     loadLazyData();
 };
+
+// Búsqueda de miembros (Server Side)
+const searchMember = async (event: AutoCompleteCompleteEvent) => {
+    const query = event.query ? event.query.trim() : '';
+    try {
+        const response = await memberService.getAll(
+            1,
+            20,
+            query || '',
+            filterProperty.value || undefined,
+            filterDepartment.value || undefined,
+            filterStatus.value || undefined
+        );
+        filteredMembers.value = response.data;
+    } catch (error) {
+        console.error('Error buscando miembros:', error);
+        filteredMembers.value = [];
+    }
+};
+
+// Búsqueda de Departamentos (Server Side)
+
+const searchDepartment = async (event: AutoCompleteCompleteEvent) => {
+    const query = event.query.trim();
+    if (!query) return;
+    try {
+        const response = await departmentService.getAll(1, 20, query);
+        filteredDepartments.value = response.data;
+    } catch (e) {
+        console.error("Error buscando departamento", e);
+    }
+};
+
+
+// --- REACTIVIDAD PARA EL BUSCADOR DE MIEMBROS ---
+watch(selectedMemberObject, (newValue) => {
+    if (newValue) {
+        if (typeof newValue === 'object' && newValue !== null) {
+            const validEmail = newValue.email && newValue.email !== '-' ? newValue.email : null;
+            searchValue.value = validEmail || newValue.name;
+        }
+        else if (typeof newValue === 'string') {
+            searchValue.value = newValue;
+        }
+    } else {
+        searchValue.value = '';
+    }
+    onFilterChange();
+});
+
+watch(selectedDepartmentObject, (newValue) => {
+    if (newValue) {
+        filterDepartment.value = newValue.name;
+    } else {
+        filterDepartment.value = '';
+    }
+    onFilterChange();
+});
 
 let searchTimeout: ReturnType<typeof setTimeout>;
 const onFilterChange = () => {
@@ -174,6 +261,7 @@ const onFilterChange = () => {
         loadLazyData();
     }, 500);
 };
+
 
 // --- IMPORTACIÓN MASIVA EXCEL ---
 const handleFileUpload = async (event: any) => {
@@ -188,21 +276,21 @@ const handleFileUpload = async (event: any) => {
     try {
         await memberStore.importMembers(file);
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Importación completada sin errores', life: 3000 });
-        loadLazyData(); 
+        loadLazyData();
     } catch (e: any) {
         console.error("Error importación:", e);
-        
+
         const errors = e.response?.data?.errors;
-        
+
         if (Array.isArray(errors) && errors.length > 0) {
             const flatErrors = errors.flat().slice(0, 3);
-            
+
             flatErrors.forEach((errMsg: string) => {
-                toast.add({ 
-                    severity: 'error', 
-                    summary: 'Error en Excel', 
-                    detail: errMsg, 
-                    life: 8000 
+                toast.add({
+                    severity: 'error',
+                    summary: 'Error en Excel',
+                    detail: errMsg,
+                    life: 8000
                 });
             });
 
@@ -250,8 +338,10 @@ const exportCSV = async () => {
         'Estado': m.status,
         'OnQ ID': m.corporate_info.onq_id || '-',
         'Teléfono': m.details?.phone || '-',
-        'Fecha Alta': m.hire_date || '-',
-        'Fecha Baja': m.termination_date || '-'
+        'Fecha Alta RH': m.hire_date || '-',
+        'Fecha Admisión IT': m.admission_date || '-', // Nuevo dato relevante
+        'Fecha Baja RH': m.termination_date || '-',
+        'Fecha Baja IT': m.hire_end_date || '-'
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -267,25 +357,33 @@ const exportPDF = async () => {
     const columns = [
         { header: 'TM ID', dataKey: 'tm_id' },
         { header: 'Hilton ID', dataKey: 'hilton_id' },
-        { header: 'Nombre', dataKey: 'full_name' },
+        { header: 'Nombre Completo', dataKey: 'full_name' },
+        { header: 'Email', dataKey: 'email' },
         { header: 'Propiedad', dataKey: 'property' },
-        { header: 'Depto', dataKey: 'department' },
+        { header: 'Departamento', dataKey: 'department' },
         { header: 'Puesto', dataKey: 'position' },
         { header: 'Estado', dataKey: 'status' },
-        { header: 'Alta', dataKey: 'hire_date' },
-        { header: 'Baja', dataKey: 'termination_date' }
+        { header: 'Fecha Alta RH', dataKey: 'hire_date' },
+        { header: 'Fecha Admisión IT', dataKey: 'admission_date' }, // Nuevo
+        { header: 'Fecha Baja RH', dataKey: 'termination_date' },
+        { header: 'Fecha Baja IT', dataKey: 'hire_end_date' }
     ];
 
     const rows = data.map((m: Member) => ({
-        tm_id: m.tm_id,
-        hilton_id: m.hilton_id,
+
+        tm_id: m.tm_id || '-',
+        hilton_id: m.hilton_id || '-',
         full_name: m.full_name,
-        property: m.property?.name || 'N/A',
+        email: m.email || '-',
+        property: m.property?.name || 'Sin Asignar',
         department: m.corporate_info.department || '-',
         position: m.corporate_info.position || '-',
         status: m.status,
-        hire_date: m.hire_date || '-',
-        termination_date: m.termination_date || '-'
+        hire_date: m.hire_date ? new Date(m.hire_date + 'T12:00:00').toLocaleDateString('es-MX') : '-',
+        admission_date: m.admission_date ? new Date(m.admission_date + 'T12:00:00').toLocaleDateString('es-MX') : '-',
+        termination_date: m.termination_date ? new Date(m.termination_date + 'T12:00:00').toLocaleDateString('es-MX') : '-',
+        hire_end_date: m.hire_end_date ? new Date(m.hire_end_date + 'T12:00:00').toLocaleDateString('es-MX') : '-'
+
     }));
 
     autoTable(doc, {
@@ -311,10 +409,15 @@ const openNew = () => {
         tm_id: '', hilton_id: '',
         name: '', last_name: '',
         email: '',
-        position: '', department: '', onq_id: '',
-        status: 'ACTIVO',
-        phone: '', notes: '', hire_date: null,
-        termination_date: null
+
+        department_id: null,
+        position_id: null,
+        onq_id: '',
+        status: '',
+
+        phone: '', notes: '',
+        hire_date: null, termination_date: null,
+        admission_date: null, hire_end_date: null
     };
     submitted.value = false;
     isEditMode.value = false;
@@ -322,7 +425,16 @@ const openNew = () => {
 };
 
 // 2. ABRIR EDITAR 
-const editMember = (member: Member) => {
+const editMember = async (member: Member) => {
+
+    // Detectamos el departamento desde la relación position_details del backend
+    const deptId = member.position_details?.department_id || null;
+
+    // Precargamos los puestos de ese departamento
+    if (deptId) {
+        availablePositions.value = await positionService.getListForSelect(deptId);
+    }
+
     form.value = {
         id: member.id,
         property_id: member.property_id,
@@ -332,13 +444,12 @@ const editMember = (member: Member) => {
 
         name: member.name,
         last_name: member.last_name,
-
         email: member.email || '',
 
-        position: member.corporate_info.position || '',
-        department: member.corporate_info.department || '',
-        onq_id: member.corporate_info.onq_id || '',
+        department_id: deptId,
+        position_id: member.position_id, // ID numérico
 
+        onq_id: member.corporate_info.onq_id || '',
         status: member.status,
 
         // Detalles
@@ -346,7 +457,9 @@ const editMember = (member: Member) => {
         notes: member.details?.notes || '',
 
         hire_date: member.hire_date ? new Date(member.hire_date + 'T12:00:00') : null,
-        termination_date: member.termination_date ? new Date(member.termination_date + 'T12:00:00') : null
+        termination_date: member.termination_date ? new Date(member.termination_date + 'T12:00:00') : null,
+        admission_date: member.admission_date ? new Date(member.admission_date + 'T12:00:00') : null,
+        hire_end_date: member.hire_end_date ? new Date(member.hire_end_date + 'T12:00:00') : null
     };
 
     submitted.value = false;
@@ -361,23 +474,22 @@ const saveMember = async () => {
 
     const payload: CreateMemberPayload = {
         property_id: form.value.property_id,
+        position_id: form.value.position_id, // Enviamos el ID del puesto
 
         tm_id: form.value.tm_id,
         hilton_id: form.value.hilton_id,
-
         name: form.value.name,
         last_name: form.value.last_name,
-
         email: form.value.email,
-
-        position: form.value.position,
-        department: form.value.department,
         onq_id: form.value.onq_id,
-
-        status: form.value.status,
+        // status: form.value.status,
 
         // Date Object -> YYYY-MM-DD
         hire_date: form.value.hire_date ? form.value.hire_date.toISOString().split('T')[0] : null,
+        termination_date: form.value.termination_date ? form.value.termination_date.toISOString().split('T')[0] : null,
+        admission_date: form.value.admission_date ? form.value.admission_date.toISOString().split('T')[0] : null,
+        hire_end_date: form.value.hire_end_date ? form.value.hire_end_date.toISOString().split('T')[0] : null,
+
         details: {
             phone: form.value.phone,
             notes: form.value.notes,
@@ -396,6 +508,7 @@ const saveMember = async () => {
         loadLazyData();
     } catch (e) {
         console.error(e);
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar el miembro', life: 5000 });
     }
 };
 
@@ -416,14 +529,42 @@ const deleteMember = async () => {
     }
 };
 
+// 6. ACCIÓN ADICIONAL: ADMITIR EN IT
+const admitMember = async (member: Member) => {
+    await memberStore.admitMemberIT(member.id);
+    toast.add({ severity: 'success', summary: 'Admitido', detail: 'Usuario activo en ITAM', life: 3000 });
+    loadLazyData();
+};
+
 // --- HELPERS VISUALES ---
 const getSeverity = (status: string) => {
     switch (status) {
         case 'ACTIVO': return 'success';
         case 'BAJA': return 'danger';
-        case 'TERMINADO': return 'warn';
+        case 'PENDIENTE_IT': return 'warn';
+        case 'TERMINADO': return 'secondary'; // Gris para terminados
         default: return 'info';
     }
+};
+
+const getHeaderTitle = (mode: string) => {
+    const titles: Record<string, string> = {
+        'Pendientes IT': 'Pendientes de Ingreso a Sistemas',
+        'Activos': 'Directorio de Personal Activo',
+        'Bajas': 'Personal en Proceso de Baja',
+        'Terminados': 'Histórico de Personal Inactivo'
+    };
+    return titles[mode] || 'Directorio';
+};
+
+const getHeaderIcon = (mode: string) => {
+    const icons: Record<string, string> = {
+        'Pendientes IT': 'pi pi-clock text-orange-500',
+        'Activos': 'pi pi-users text-blue-500',
+        'Bajas': 'pi pi-user-minus text-red-500',
+        'Terminados': 'pi pi-folder-open text-gray-500'
+    };
+    return icons[mode] || 'pi pi-users text-blue-500';
 };
 
 const formatDate = (dateString: string | null) => {
@@ -440,41 +581,132 @@ const formatDate = (dateString: string | null) => {
             <SelectButton v-model="viewMode" :options="viewModeOptions" @change="toggleViewMode" />
         </div>
 
-        <Toolbar class="mb-4 shadow-sm border-gray-200">
+        <div class="bg-white p-4 rounded-xl shadow-sm  mb-6 flex flex-col gap-4">
+            
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                
+                <Button label="Nuevo Miembro" icon="pi pi-plus"
+                    class="bg-blue-600 hover:bg-blue-700 text-white border-none w-full sm:w-auto px-5" @click="openNew"
+                    :disabled="viewMode === 'Bajas' || viewMode === 'Terminados'" />
+
+                <div class="flex items-center justify-center gap-1 p-1.5 rounded-lg  w-full sm:w-auto">
+                    
+                    <input type="file" ref="fileInput" class="hidden" accept=".xlsx, .xls" @change="handleFileUpload" style="display: none;" />
+                    
+                    <Button icon="pi pi-upload" severity="secondary" text 
+                        v-tooltip.top="'Importar Excel'" class="hover:bg-purple-50 text-purple-600 w-10 h-10 p-0" 
+                        @click="triggerFileInput" />
+
+                    <div class="w-px h-5 bg-gray-300 mx-1"></div>
+
+                    <Button icon="pi pi-file-excel" severity="success" text 
+                        v-tooltip.top="'Descargar Excel'" class="w-10 h-10 p-0" @click="exportCSV" />
+                    
+                    <Button icon="pi pi-file-pdf" severity="danger" text 
+                        v-tooltip.top="'Descargar PDF'" class="w-10 h-10 p-0" @click="exportPDF" />
+                    
+                    <div class="w-px h-5 bg-gray-300 mx-1"></div>
+
+                    <Button icon="pi pi-refresh" severity="secondary" text 
+                        v-tooltip.top="'Recargar Datos'" class="w-10 h-10 p-0 text-gray-600" @click="loadLazyData" />
+                </div>
+            </div>
+
+            <hr class="border-gray-100 m-0" />
+
+            <div class="flex flex-col lg:flex-row items-center gap-3 w-full">
+                
+                <div class="w-full lg:flex-1">
+                    <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="full_name"
+                        placeholder="Buscar colaborador por nombre..." class="w-full" inputClass="w-full pl-10" 
+                        @complete="searchMember" showClear>
+                        
+                        <i class="pi pi-search absolute left-3 top-2/4 -translate-y-1/2 text-gray-400 z-10"></i>
+
+                        <template #option="slotProps">
+                            <div class="flex items-center gap-3 p-1">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                    {{ slotProps.option.name?.charAt(0) || '' }}{{ slotProps.option.last_name?.charAt(0) || '' }}
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="font-bold text-gray-800 text-sm">{{ slotProps.option.full_name }}</span>
+                                    <span class="text-[10px] text-gray-500 uppercase">{{ slotProps.option.corporate_info?.position || 'Sin puesto' }}</span>
+                                </div>
+                            </div>
+                        </template>
+                    </AutoComplete>
+                </div>
+
+                <div class="flex flex-col sm:flex-row w-full lg:w-auto gap-3">
+                    
+                    <Select v-model="filterProperty" :options="properties" optionLabel="name" optionValue="id"
+                        placeholder="Todos los Hoteles" class="w-full sm:w-56" showClear filter
+                        @change="onFilterChange" />
+
+                    <AutoComplete v-model="selectedDepartmentObject" :suggestions="filteredDepartments"
+                        optionLabel="name" placeholder="Departamento..." class="w-full sm:w-64"
+                        @complete="searchDepartment" showClear dropdown>
+                        <template #option="slotProps">
+                            <div class="flex items-center gap-2">
+                                <i class="pi pi-sitemap text-gray-400"></i>
+                                <span class="font-medium text-gray-700">{{ slotProps.option.name }}</span>
+                            </div>
+                        </template>
+                    </AutoComplete>
+                </div>
+
+            </div>
+        </div>
+        <!-- <Toolbar class="mb-4 shadow-sm border-gray-200">
             <template #start>
 
                 <div class="flex flex-wrap items-center gap-3">
                     <Button label="Nuevo Miembro" icon="pi pi-plus"
                         class="bg-blue-600 hover:bg-blue-700 text-white border-none" @click="openNew"
-                        :disabled="viewMode === 'Bajas'" />
+                        :disabled="viewMode === 'Bajas' || viewMode === 'Terminados'" />
                     <span class="text-gray-300">|</span>
 
                     <Select v-model="filterProperty" :options="properties" optionLabel="name" optionValue="id"
                         placeholder="Filtrar por Propiedad" class="w-48 sm:w-60" showClear filter
                         @change="onFilterChange" />
 
-                    <Select v-if="viewMode === 'Directorio'" 
-                    v-model="filterStatus" :options="statusOptions" placeholder="Estado" class="w-32 sm:w-40" 
-                    showClear @change="onFilterChange" />
+                    <AutoComplete v-model="selectedMemberObject" :suggestions="filteredMembers" optionLabel="full_name"
+                        placeholder="Buscar colaborador específico..." class="w-full sm:w-80" @complete="searchMember"
+                        showClear dropdown>
 
-                    <IconField iconPosition="left">
-                        <InputIcon><i class="pi pi-filter text-gray-500" /></InputIcon>
-                        <InputText v-model="filterDepartment" placeholder="Filtrar Depto..."
-                            class="w-40 border-gray-300" @input="onFilterChange" />
-                    </IconField>
+                        <template #option="slotProps">
+                            <div class="flex items-center gap-3 p-1">
+                                <div class="flex flex-col">
+                                    <span class="font-bold text-gray-800 text-sm">{{ slotProps.option.full_name
+                                        }}</span>
+                                    <span class="text-[10px] text-gray-500 uppercase">{{
+                                        slotProps.option.corporate_info?.position || 'Sin puesto' }}</span>
+                                </div>
+                            </div>
+                        </template>
+                    </AutoComplete>
 
+                    <AutoComplete v-model="selectedDepartmentObject" :suggestions="filteredDepartments"
+                        optionLabel="name" placeholder="Buscar Departamento..." class="w-full sm:w-64"
+                        @complete="searchDepartment" showClear dropdown>
+                        <template #option="slotProps">
+                            <div class="flex items-center gap-2">
+                                <i class="pi pi-sitemap text-gray-400"></i>
+                                <span class="font-medium text-gray-700">{{ slotProps.option.name }}</span>
+                            </div>
+                        </template>
+                    </AutoComplete>
                 </div>
             </template>
 
             <template #end>
 
                 <div class="flex items-center gap-2">
-                    <input type="file" ref="fileInput" class="hidden" accept=".xlsx, .xls" @change="handleFileUpload" style="display: none;" />
-                    
-                    <Button icon="pi pi-upload" severity="help" text rounded 
-                            v-tooltip.top="'Importar Excel'" 
-                            class="hover:bg-purple-50 text-purple-600"
-                            @click="triggerFileInput" />
+                    <input type="file" ref="fileInput" class="hidden" accept=".xlsx, .xls" @change="handleFileUpload"
+                        style="display: none;" />
+
+                    <Button icon="pi pi-upload" severity="help" text rounded v-tooltip.top="'Importar Excel'"
+                        class="hover:bg-purple-50 text-purple-600" @click="triggerFileInput" />
 
                     <span class="text-gray-300 mx-1">|</span>
 
@@ -484,7 +716,7 @@ const formatDate = (dateString: string | null) => {
                 </div>
 
             </template>
-        </Toolbar>
+        </Toolbar> -->
 
         <DataTable :value="memberStore.members" :lazy="true" :paginator="true" :rows="lazyParams.rows"
             :totalRecords="memberStore.totalRecords" :loading="memberStore.isLoading" @page="onPage"
@@ -493,14 +725,12 @@ const formatDate = (dateString: string | null) => {
 
             <template #header>
                 <div class="flex flex-wrap justify-between items-center gap-3 p-2">
-                    <h4 class="text-xl font-bold text-gray-700 m-0">
-                        {{ viewMode === 'Bajas' ? 'Histórico de Bajas' : 'Directorio Activo' }}
+
+                    <h4 class="text-xl font-bold text-gray-800 m-0 flex items-center gap-2">
+                        <i :class="getHeaderIcon(viewMode)"></i>
+                        {{ getHeaderTitle(viewMode) }}
                     </h4>
-                    <IconField iconPosition="left">
-                        <InputIcon><i class="pi pi-search text-gray-500" /></InputIcon>
-                        <InputText v-model="searchValue" @input="onFilterChange" placeholder="Buscar general..."
-                            class="w-64 border-gray-300" />
-                    </IconField>
+
                 </div>
             </template>
 
@@ -571,31 +801,65 @@ const formatDate = (dateString: string | null) => {
                 </template>
             </Column>
 
-            <Column v-if="viewMode === 'Bajas'" header="Fecha Baja" style="min-width: 120px">
+            <Column header="Contratación (RH)" style="min-width: 140px">
                 <template #body="slotProps">
-                    <span class="text-red-700 font-medium text-sm">
-                        {{ formatDate(slotProps.data.termination_date) }}
-                    </span>
-                </template>
-            </Column>
-
-            <Column v-else header="Fecha de Contratación" style="min-width: 120px">
-                <template #body="slotProps">
-                    <span class="text-gray-600 text-sm">
+                    <span class="text-blue-700 font-medium text-sm">
+                        <i class="pi pi-calendar-plus text-xs mr-1"></i>
                         {{ formatDate(slotProps.data.hire_date) }}
                     </span>
                 </template>
             </Column>
 
-            <Column header="Acciones" style="min-width: 100px" alignFrozen="right" frozen>
+            <Column v-if="viewMode !== 'Pendientes IT'" header="Ingreso Sistemas (IT)" style="min-width: 140px">
+                <template #body="slotProps">
+                    <span
+                        :class="slotProps.data.admission_date ? 'text-emerald-700 font-medium text-sm' : 'text-gray-400 italic text-xs'">
+                        <i v-if="slotProps.data.admission_date" class="pi pi-calendar-plus text-xs mr-1"></i>
+                        {{ slotProps.data.admission_date ? formatDate(slotProps.data.admission_date) : 'Sin registro IT'
+                        }}
+                    </span>
+                </template>
+            </Column>
+
+            <Column v-if="viewMode === 'Bajas' || viewMode === 'Terminados'" header="Baja Técnica (IT)"
+                style="min-width: 140px">
+                <template #body="slotProps">
+                    <span
+                        :class="slotProps.data.termination_date ? 'text-red-600 font-medium text-sm' : 'text-gray-400 italic text-xs'">
+                        <i v-if="slotProps.data.termination_date" class="pi pi-calendar-times text-xs mr-1"></i>
+                        {{ slotProps.data.termination_date ? formatDate(slotProps.data.termination_date) : 'Pendiente'
+                        }}
+                    </span>
+                </template>
+            </Column>
+
+            <Column v-if="viewMode === 'Bajas' || viewMode === 'Terminados'" header="Fin Contrato (RH)"
+                style="min-width: 140px">
+                <template #body="slotProps">
+                    <span
+                        :class="slotProps.data.hire_end_date ? 'text-orange-600 font-medium text-sm' : 'text-gray-400 italic text-xs'">
+                        <i v-if="slotProps.data.hire_end_date" class="pi pi-calendar-times text-xs mr-1"></i>
+                        {{ slotProps.data.hire_end_date ? formatDate(slotProps.data.hire_end_date) : 'Pendiente' }}
+                    </span>
+                </template>
+            </Column>
+
+
+            <Column header="Acciones" style="min-width: 140px" alignFrozen="right" frozen>
                 <template #body="slotProps">
                     <div class="flex gap-2">
-                        <Button icon="pi pi-pencil" severity="info"
-                            class="p-button-rounded p-button-outlined text-white" @click="editMember(slotProps.data)"
-                            v-tooltip.top="'Editar'" />
-                        <Button icon="pi pi-times-circle" severity="danger"
-                            class="p-button-rounded p-button-outlined text-white" @click="confirmDelete(slotProps.data)"
-                            v-tooltip.top="'Eliminar'" />
+
+                        <Button v-if="slotProps.data.status === 'PENDING_IT'" icon="pi pi-check-circle"
+                            severity="success" class="p-button-rounded p-button-outlined"
+                            @click="admitMember(slotProps.data)" v-tooltip.top="'Admitir en Sistemas'" />
+
+                        <Button icon="pi pi-user-edit" severity="info" class="p-button-rounded p-button-outlined"
+                            @click="editMember(slotProps.data)" v-tooltip.top="'Ver Expediente / Editar'" />
+
+                        <Button
+                            v-if="slotProps.data.status === 'ACTIVO' || (slotProps.data.status === 'BAJA' && !slotProps.data.termination_date)"
+                            icon="pi pi-user-minus" severity="danger" class="p-button-rounded p-button-outlined"
+                            @click="confirmDelete(slotProps.data)" v-tooltip.top="'Registrar Baja Técnica (IT)'" />
                     </div>
                 </template>
             </Column>
@@ -661,16 +925,17 @@ const formatDate = (dateString: string | null) => {
 
                 <div>
                     <label class="text-sm block mb-1 font-medium text-gray-700">Departamento</label>
-                    <Select v-model="form.department" :options="DEPARTMENTS_LIST"
-                        placeholder="Selecciona un departamento" class="w-full" filter showClear
+                    <Select v-model="form.department_id" :options="departmentStore.departments" optionLabel="name"
+                        optionValue="id" placeholder="Selecciona un departamento" class="w-full" filter showClear
                         @change="onDepartmentChange" />
                 </div>
 
                 <div>
                     <label class="text-sm block mb-1 font-medium text-gray-700">Puesto</label>
-                    <Select v-model="form.position" :options="availablePositions" :disabled="!form.department"
-                        placeholder="Selecciona un puesto" class="w-full" filter showClear
-                        :emptyMessage="form.department ? 'No hay puestos registrados' : 'Primero selecciona un departamento'" />
+                    <Select v-model="form.position_id" :options="availablePositions" optionLabel="name" optionValue="id"
+                        :disabled="!form.department_id" placeholder="Selecciona un puesto" class="w-full" filter
+                        showClear
+                        :emptyMessage="form.department_id ? 'No hay puestos registrados' : 'Selecciona depto primero'" />
                 </div>
 
                 <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4">
@@ -679,15 +944,29 @@ const formatDate = (dateString: string | null) => {
                 </div>
 
 
-                <div>
-                    <label class="text-sm block mb-1 font-medium">Fecha de Contratación</label>
+                <div class="col-span-1 p-3 bg-blue-50 rounded border border-blue-100">
+                    <label class="text-xs font-bold text-blue-700 block mb-1 uppercase">RH: Inicio Contrato</label>
                     <Calendar v-model="form.hire_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
+                </div>
+                <div class="col-span-1 p-3 bg-red-50 rounded border border-red-100">
+                    <label class="text-xs font-bold text-red-700 block mb-1 uppercase">RH: Fin Contrato</label>
+                    <Calendar v-model="form.termination_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
+                </div>
+
+                <div class="col-span-1 p-3 bg-green-50 rounded border border-green-100">
+                    <label class="text-xs font-bold text-green-700 block mb-1 uppercase">IT: Ingreso al Sistema</label>
+                    <Calendar v-model="form.admission_date" showIcon dateFormat="yy-mm-dd" class="w-full"
+                        placeholder="Automático al admitir" />
+                </div>
+                <div class="col-span-1 p-3 bg-orange-50 rounded border border-orange-100">
+                    <label class="text-xs font-bold text-orange-700 block mb-1 uppercase">IT: Baja Técnica</label>
+                    <Calendar v-model="form.hire_end_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
                 </div>
 
 
-                <div>
-                    <label class="text-sm block mb-1 font-medium">Fecha de Baja</label>
-                    <Calendar v-model="form.termination_date" showIcon dateFormat="yy-mm-dd" class="w-full" />
+                <div class="col-span-1 md:col-span-2 border-b pb-1 mb-2 mt-4">
+                    <span class="text-gray-600 font-bold text-lg"><i class="pi pi-list mr-2"></i>Detalles
+                        Adicionales</span>
                 </div>
 
                 <div>
@@ -711,13 +990,14 @@ const formatDate = (dateString: string | null) => {
             </template>
         </Dialog>
 
-        <Dialog v-model:visible="deleteDialog" header="Confirmar Baja" modal class="w-96">
+        <Dialog v-model:visible="deleteDialog" header="Confirmar Baja Técnica" modal class="w-96">
             <div class="flex items-center gap-3">
-                <i class="pi pi-user-minus text-3xl text-orange-500"></i>
+                <i class="pi pi-exclamation-triangle text-3xl text-orange-500"></i>
                 <div class="text-gray-700 leading-relaxed">
-                    <p>¿Procesar la baja de <b>{{ selectedMemberToDelete?.full_name }}</b>?</p>
-                    <p class="text-xs text-gray-500 mt-1">El expediente pasará a estado "BAJA" y se guardará la fecha de
-                        hoy.
+                    <p>¿Procesar la baja del sistema IT de <b>{{ selectedMemberToDelete?.full_name }}</b>?</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Se registrará la fecha de cierre técnico hoy. El estado cambiará a BAJA o TERMINADO según
+                        corresponda.
                     </p>
                 </div>
             </div>

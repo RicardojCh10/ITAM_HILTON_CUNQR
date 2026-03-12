@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { memberService} from '../services/member.service';
-import type { Member, CreateMemberPayload, StatsResponse } from '../types/member.types';
+import { memberService } from '../services/member.service';
+import type { Member, CreateMemberPayload, SimpleStatsResponse } from '../types/member.types';
 
 export const useMemberStore = defineStore('member', () => {
     // Estado
@@ -10,12 +10,10 @@ export const useMemberStore = defineStore('member', () => {
     const isLoading = ref(false);
     const error = ref<string | null>(null);
     const currentMember = ref<Member | null>(null);
-
-    const stats = ref<StatsResponse | null>(null);
+    const stats = ref<SimpleStatsResponse | null>(null);
 
     // Acciones
-    async function fetchMembers(page: number = 1, perPage: number = 15, search: string = '', propertyId?: number, department?: string,
-      status?: string) {
+    async function fetchMembers(page: number = 1, perPage: number = 15, search: string = '', propertyId?: number, department?: string, status?: string) {
         isLoading.value = true;
         try {
             const response = await memberService.getAll(page, perPage, search, propertyId, department, status);
@@ -59,10 +57,30 @@ export const useMemberStore = defineStore('member', () => {
         }
     }
 
+    // Acción para IT: Dar acceso
+    async function admitMemberIT(id: number) {
+        isLoading.value = true;
+        try {
+            await memberService.admitMember(id);
+        } finally {
+            isLoading.value = false;
+        }
+    }
+
+    // Acción para IT: Baja técnica
     async function deleteMember(id: number) {
         isLoading.value = true;
         try {
-            await memberService.delete(id);
+            await memberService.retireMember(id);
+        } finally {
+            isLoading.value = false;
+        }
+    }
+
+    async function downloadAccessPdf(id: number, memberName: string) {
+        isLoading.value = true;
+        try {
+            await memberService.downloadAccessPdf(id, memberName);
         } finally {
             isLoading.value = false;
         }
@@ -75,7 +93,6 @@ export const useMemberStore = defineStore('member', () => {
             formData.append('file', file);
             await memberService.import(formData);
         } catch (e) {
-            console.error(e);
             throw e; 
         } finally {
             isLoading.value = false;
@@ -86,7 +103,7 @@ export const useMemberStore = defineStore('member', () => {
         try {
             stats.value = await memberService.getStats();
         } catch (e) {
-            console.error("Error cargando estadísticas", e);
+            console.error("Error stats", e);
         }
     }
 
@@ -102,6 +119,8 @@ export const useMemberStore = defineStore('member', () => {
         createMember,
         updateMember,
         deleteMember,
+        admitMemberIT,
+        downloadAccessPdf,
         importMembers,
         fetchStats
     };

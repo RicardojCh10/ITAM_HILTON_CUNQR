@@ -67,8 +67,53 @@ export const routes: RouteRecordRaw[] = [
           roles: ['admin']
         }
       },
+
+      //Ruta: /dashboard/departments
       {
-        // Ruta: /dashboard/members
+        path: 'departments',
+        name: 'DepartmentList',
+        component: () => import('@/modules/department/views/DepartmentListView.vue'),
+        meta: {
+          title: 'Gestión de Departamentos',
+          roles: ['admin']
+        }
+      },
+      //Ruta: /dashboard/positions
+      {
+        path: 'positions',
+        name: 'PositionList',
+        component: () => import('@/modules/position/views/PositionListView.vue'),
+        meta: {
+          title: 'Gestión de Puestos',
+          roles: ['admin']
+        }
+      },
+
+      //Ruta: /dashboard/platforms
+      {
+        path: 'platforms',
+        name: 'PlatformsList',
+        component: () => import('@/modules/platforms/views/PlatformListView.vue'),
+        meta: {
+          title: 'Gestión de Plataformas',
+          roles: ['admin']
+        }
+      },
+
+      //Ruta: /dashboard/platforms/:id/permissions
+      {
+        path: 'platforms/:id/permissions',
+        name: 'PlatformPermissions',
+        component: () => import('@/modules/platformPermissions/views/PlatformPermissionListView.vue'),
+        props: true, // Permite pasar el :id como prop al componente
+        meta: {
+          title: 'Permisos de la Plataforma',
+          roles: ['admin']
+        }
+      },
+
+      // Ruta: /dashboard/members
+      {
         path: 'members',
         name: 'MemberList',
         component: () => import('@/modules/members/views/MemberListView.vue'),
@@ -78,7 +123,7 @@ export const routes: RouteRecordRaw[] = [
         }
       },
       {
-        path: 'members/:id', 
+        path: 'members/:id',
         name: 'MemberDetail',
         component: () => import('@/modules/members/views/MemberDetailView.vue'),
         meta: { title: 'Detalles del Miembro' }
@@ -90,6 +135,15 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/assets/views/AssetListView.vue'),
         meta: {
           title: 'Gestión de Activos',
+          roles: ['admin']
+        }
+      },
+      {
+        path: 'categories',
+        name: 'CategoryList',
+        component: () => import('@/modules/assets_category/views/CategoryListView.vue'),
+        meta: {
+          title: 'Gestión de Categorías',
           roles: ['admin']
         }
       },

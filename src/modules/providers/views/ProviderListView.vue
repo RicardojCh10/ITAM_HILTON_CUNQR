@@ -387,7 +387,7 @@ const deleteProvider = async () => {
                 </div>
 
                 <div class="col-span-1 md:col-span-2">
-                    <label class="block text-sm font-medium mb-1 text-gray-700">Dirección Fiscal / Física</label>
+                    <label class="block text-sm font-medium mb-1 text-gray-700">Comentarios</label>
                     <Textarea v-model="form.address" rows="2" class="w-full" autoResize />
                 </div>
 

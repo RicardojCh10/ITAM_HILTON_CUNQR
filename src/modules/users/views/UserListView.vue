@@ -264,7 +264,7 @@ const getRoleSeverity = (role: string) => {
       class="shadow-md rounded-lg overflow-hidden" stripedRows>
       <template #header>
         <div class="flex flex-wrap gap-2 items-center justify-between p-2">
-          <h4 class="m-0 text-lg font-bold text-gray-700">Gestión de Usuarios</h4>
+          <h4 class="m-0 text-xl font-bold text-gray-700">Gestión de Usuarios</h4>
           <IconField iconPosition="left">
             <InputIcon>
               <i class="pi pi-search text-gray-500" />
