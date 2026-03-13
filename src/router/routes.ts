@@ -31,7 +31,7 @@ export const routes: RouteRecordRaw[] = [
         // Ruta: /dashboard
         path: '',
         name: 'Dashboard',
-        component: () => import('@/modules/dashboard/views/WidgetsView.vue'),
+        component: () => import('@/modules/dashboard/views/Dashboard.vue'),
         meta: {
           title: 'Panel Principal'
         }

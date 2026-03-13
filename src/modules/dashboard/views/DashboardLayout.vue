@@ -13,30 +13,23 @@ const isDesktopSidebarOpen = ref(true); // Por defecto abierto en PC
 
 // --- LÓGICA INTELIGENTE DE TOGGLE ---
 const toggleSidebar = () => {
-    // Detectamos si es pantalla "Desktop" (>= 1024px es el estándar de Tailwind 'lg')
     const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
 
     if (isDesktop) {
-        // En PC: Alternamos la visibilidad del sidebar estático
         isDesktopSidebarOpen.value = !isDesktopSidebarOpen.value;
     } else {
-        // En Móvil: Abrimos/Cerramos el Drawer (overlay)
         isMobileSidebarOpen.value = !isMobileSidebarOpen.value;
     }
 };
 
-// UX: Cerrar sidebar móvil al navegar (en PC se mantiene como el usuario lo dejó)
 watch(() => route.fullPath, () => {
     isMobileSidebarOpen.value = false;
 });
 
-// Listener opcional: Si el usuario redimensiona la ventana, ajustamos para evitar bugs visuales
 onMounted(() => {
     window.addEventListener('resize', () => {
         const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
         if (!isDesktop) {
-            // Si pasamos a móvil, aseguramos que el sidebar desktop no estorbe (aunque CSS lo oculta)
-            // No necesitamos cambiar isDesktopSidebarOpen, CSS se encarga con 'lg:block'
         }
     });
 });

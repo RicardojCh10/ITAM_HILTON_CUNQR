@@ -593,7 +593,6 @@ const getSeverity = (status: string) => {
     }
 };
 
-
 const formatCurrency = (value: number | null | undefined) => {
     if (value == null) return '$0.00';
 
