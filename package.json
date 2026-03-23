@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
+    "deploy:local": "npm run build && xcopy dist\\* C:\\laragon\\www\\itam-frontend\\ /E /Y /I",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix --cache",
